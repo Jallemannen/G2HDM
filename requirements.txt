@@ -1,0 +1,11 @@
+dill
+sympy
+numpy
+matplotlib
+ipython
+notebook
+ipywidgets
+ipympl
+scipy
+pandas
+PyInstaller

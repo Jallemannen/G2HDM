@@ -1,0 +1,73 @@
+=====================================================
+    G2HDMC - General two Higgs doublet calculator
+=====================================================
+This is a python code for performing calculations for
+any general 2HDM.
+
+=====================================================
+    Author
+=====================================================
+Original author is: Hjalmar Holmstöm
+Email: hjalmarh@live.se
+
+=====================================================
+    System requirements
+=====================================================
+* Should work on all systems
+
+=====================================================
+    Installation and running
+=====================================================
+
+Installment:
+* Create venv and install packages: 
+    .\.venv\Scripts\activate (windows)
+    source .venv/bin/activate (linux)
+    pip install -r requirements.txt
+* Run python from the .venv (virtural enviroment)
+(or any other enviroment that has the same 
+packages).
+
+Running:
+* The easiest way is to use the G2HDMC interface, 
+by runnng any of the following files:
+    - G2HDMC.py (python file)
+* Another way is to create a notebook inside the 
+"Notebooks" folder, butmake sure you run
+    "from importing import *"
+to import all the nessesary packages. See some of 
+the examples if unsure. 
+
+
+=====================================================
+    File descriptions
+=====================================================
+A complete installation of G2HDMC should contain the
+following directory structure:
+
+  2HDMC
+    |
+    |--- .venv
+    |
+    |--- build
+    |
+    |--- dist
+    |
+    |--- Documentation
+    |
+    |--- Models
+    |
+    |--- Notebooks
+    |
+    |--- src
+    |
+
+
+
+=====================================================
+    VERSION HISTORY
+=====================================================
+
+1.0.0   2025-02-13
+First release of G2HDMC
+

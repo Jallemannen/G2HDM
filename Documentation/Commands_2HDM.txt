@@ -1,0 +1,28 @@
+========== 2HDM model ==========
+
+- create an object from the class
+
+* Create model:
+model = Model2HDM(name=model_name)
+
+
+========= Functions
+
+load_model()
+
+generate_parameter_relations()
+
+generate_level0_masses()
+
+solve_counterterms()
+
+calculate_counterterm_values()
+
+calculate_data2D_level0()
+
+calculate_data2D_level1()
+
+load_and_plot_data2D_level0()
+
+
+

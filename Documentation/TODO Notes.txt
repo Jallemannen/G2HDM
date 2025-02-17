@@ -1,0 +1,18 @@
+TODO / SUGGESTIONS
+
+======= Structure
+* Simplify file names: eg methods_MODEL2HDM --> methods
+
+===== Symbols/params =====
+* Change params from a list to a dict?
+
+
+===== Methods =====
+* Automate the CT-potential variables? (special function for this?)
+eg see BSMPT eq 2.25
+* Fix so that input in multiprocess gets aborted when process is finished
+
+
+==============
+* Use PyQt5.QtWidget for desktop app?
+see: https://github.com/phbasler/BSMPT/blob/master/src/models/ClassPotentialOrigin.cpp#L1403

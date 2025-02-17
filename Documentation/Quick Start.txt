@@ -1,0 +1,4 @@
+
+cd Documents/2HDM_project/G2HDM_v1.0.0
+
+python3 dist/G2HDM.py
