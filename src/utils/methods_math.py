@@ -37,7 +37,7 @@ def simplify_each_term(expr):
         return sp.Add(*[sp.simplify(term) for term in expr.args])
     return sp.simplify(expr)
 
-
+# May remove later?
 def compute_unique_permutations(N, r):
     from itertools import product, combinations_with_replacement
     result = []
@@ -55,6 +55,31 @@ def compute_unique_permutations(N, r):
     
     return unique_combinations, unique_combinations_permuations
 
+# Solve a linear system of equations
+def linear_solve(eq_list, var_list, include_trivial_solutions=False):
+    """
+    Solves a list of linear equations.
+    """
+    try:
+        sol = sp.linsolve(eq_list, var_list)
+    except Exception as e:
+        print("Error raised when solving the linear equations")
+        print(e)
+        return None
+    if len(sol) == 0:
+        return None
+    
+    sol_eqs = [sp.Eq(var, val) for var, val in zip(var_list, sol.args[0])]
+    
+    if not include_trivial_solutions:
+        sol_eqs = [eq for eq in sol_eqs if eq != True]
+    else:
+        sol_eqs = [sp.Eq(var, val, evaluate=False) for var, val in zip(var_list, sol.args[0])]
+    
+    return sol_eqs
+
+
+# ADD: Include all masses! (eigenvalues)
 def diagonalize_numerical_matrix(matrix, sorting=False):
     """
     Diagonalizes a matrix using SymPy.
@@ -84,17 +109,20 @@ def diagonalize_numerical_matrix(matrix, sorting=False):
     if not isinstance(matrix, np.ndarray):
         raise ValueError("Matrix is not a valid type or could not be converted to a numpy array.")
     
-    block_diagonal = False    
+    
     # check is matrix is 4x4 block diagonal
-    if np.allclose(matrix[0:4, 4:8], 0, atol=threshold):
-        block_diagonal = True   
-        m_top = matrix[0:4, 0:4]
-        m_bottom = matrix[4:8, 4:8]
+    N = int(matrix.shape[0])
+    n = int(N/2)
+    block_diagonal = False
+    if np.allclose(matrix[0:n, n:N], 0, atol=threshold):
+        block_diagonal = True
+        m_top = matrix[0:n, 0:n]
+        m_bottom = matrix[n:N, n:N]
         # Compute eigenvalues and eigenvectors
         eigenvalues_top, R_top = np.linalg.eigh(m_top) 
         eigenvalues_bottom, R_bottom = np.linalg.eigh(m_bottom)
         eigenvalues = np.concatenate((eigenvalues_top, eigenvalues_bottom))
-        R = np.block([[R_top, np.zeros((4,4))], [np.zeros((4,4)), R_bottom]])
+        R = np.block([[R_top, np.zeros((n,n))], [np.zeros((n,n)), R_bottom]])
     
     else:
         # Compute eigenvalues and eigenvectors

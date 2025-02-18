@@ -37,9 +37,11 @@ import time
 # Importing the Model2HDM modules
 from src.Model2HDM.class_Model2HDM import Model2HDM
 from src.Model2HDM.methods_Model2HDM import * 
-from src.Model2HDM.methods_parameterSearch import * 
+from src.Model2HDM.ParameterSearch import * 
 from src.Model2HDM.constraints import * 
 from src.Model2HDM.potentials import *
+
+from src.Model2HDM.ModelDataCalculator import ModelDataCalculator
 
 # Importing the Utils modules
 from src.utils.methods_math import *

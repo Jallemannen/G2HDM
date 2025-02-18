@@ -8,7 +8,7 @@ import time
 
 # Custom Packages
 from .methods_Model2HDM import *
-from .methods_parameterSearch import *
+from .ParameterSearch import *
 #from .constraints import *
 
 # Custom Packages, Utils
@@ -22,7 +22,7 @@ from src.utils import constants as const
 
 class Model2HDM:
     
-    def __init__(self, symbols:dict, potentials:dict, name:str="Model", **kwargs):
+    def __init__(self, symbols:dict, potentials:dict, name:str="Model", evaluate_now:bool=False, **kwargs):
         
         # Paths for saving and loading data
         self.name = name
@@ -77,11 +77,21 @@ class Model2HDM:
         self.V0_display = V0_func(self.field1_matrixsymbol, self.field2_matrixsymbol, self.V0_params_symbols)
         self.VCT_display1, self.VCT_display2 = VCT_func(self.field1_matrixsymbol, self.field2_matrixsymbol, self.VCT_params_symbols, self.fields, self.bgfields)
         
+        # Gauge bosons
+        W1, W2, W3 = sp.symbols("W_1 W_2 W_3", real=True)
+        B = sp.Symbol("B", real=True)
+        self.fields_gauge = [B, W1, W2, W3]
+        G0, G1, G2, G3 = sp.symbols("G_0 G_1 G_2 G_3", real=True)
+        self.massfields_gauge = [G0, G1, G2, G3]
+        
         # Dict for diverse data
         self.DATA = {}
         
         for key, value in kwargs.items():
             self.DATA[key] = value
+            
+        if evaluate_now:
+            pass
             
         # Save the model
         #self.save()
@@ -195,107 +205,6 @@ class Model2HDM:
         self.save()
     
     #################### Numerical Methods ####################
-    
-    # Calculate the counterterm parameter values
-    def calculate_counterterm_values(self, show_solution:bool=True) -> None:
-        
-        reload_and_import("src.Model2HDM.methods_Model2HDM", "calculate_counterterm_values")
-        
-        # Assertions
-        #assert self.DATA["VCT_params_eqs_sol"] != None, "Please solve the counterterms first."
-        #assert kwargs["VEV_values"] != None, "Please assign values to all VEV fields."
-        #assert kwargs["bgfield_values"] != None, "Please assign values to all background fields."
-        #assert kwargs["V0_params_values"] != None, "Please assign values to all parameters."
-        
-        # Calculate the counterterm values
-        VCT_params_values = calculate_counterterm_values(self, show_solution=show_solution)
-        
-        # Save
-        self.VCT_params_values = VCT_params_values
-           
-        self.save()
-        
-    #################### Generate datasets ####################
-        
-    def calculate_data2D_level0(self, free_bgfield, N, Xrange,
-                              name:str="", save:bool=True,
-                              calc_potential=True, calc_mass=True,):
-        # params_values=None, bgfield_values=None, VEV_values=None,
-        
-        reload_and_import("src.Model2HDM.methods_Model2HDM", "calculate_data2D_level0")
-        
-        # Assertions
-        """if self.V0_params_values == None:
-            params_values = self.V0_params_values
-        if bgfield_values == None:
-            bgfield_values = self.bgfield_values
-        if VEV_values == None:
-            VEV_values = self.VEV_values
-        if params_values == None or bgfield_values == None or VEV_values == None:
-            raise ValueError("Please assign values to all parameters, background fields and VEVs.")"""
-        
-        # Assertions
-        """if calc_potential:
-            V0 = self.potential("V0")
-        if calc_mass:
-            M0 = self.masses("M0")
-        if not calc_potential and not calc_mass:
-            raise ValueError("Please select at least one of the following to generate data: calc_potential, calc_mass")
-        """
-        
-        # Generate the data
-        X, Y1, Y2 = calculate_data2D_level0(self, free_bgfield,
-                          N=N, Xrange=Xrange,
-                          calc_potential=calc_potential, calc_mass=calc_mass, sorting=True)
-
-        if save:
-            if name != "":
-                name = name + "_"
-            if calc_potential:
-                save_data({"omega":X, "V":Y1}, f"{name}potential_level0_data", self.path_data)
-            if calc_mass:
-                save_data({"omega":X} | {f"m_{j+1}":Y2[j] for j in range(8)}, f"{name}mass_level0_data", self.path_data)
-    
-    # One-loop level potential and masses
-    def calculate_data2D_level1(self, free_bgfield, N, Xrange, calc_potential=True, calc_mass=True, name:str="", save:bool=True):
-        
-        reload_and_import("src.Model2HDM.methods_Model2HDM", "calculate_data2D_level1")
-        
-        # Generate the data
-        X, Y1, Y2 = calculate_data2D_level1(self, free_bgfield, N, Xrange=Xrange, calc_potential=calc_potential, calc_mass=calc_mass)
-    
-        if save:
-            if name != "":
-                name = name + "_"
-            if calc_potential:
-                save_data({"omega":X, "V":Y1}, f"{name}potential_level1_data", self.path_data)
-            if calc_mass:
-                save_data({"omega":X} | {f"m_{j+1}":Y2[j] for j in range(8)}, f"{name}mass_level1_data", self.path_data)
-    
-    # Tree-level potential and masses, with 2 free background fields
-    def calculate_data3D_level0():
-        pass
-    
-    def calculate_data3D_level1():
-        pass
-    
-    def plot_data2D(self, name="", level=0, plot_potential=True, plot_masses=True, save_fig:bool=True,
-                    Xrange=None, Yrange=None):
-        
-        reload_and_import("src.Model2HDM.methods_Model2HDM", "load_and_plot_data2D")
-        
-        load_and_plot_data2D(self, name, level, plot_potential, plot_masses, Xrange=Xrange, Yrange=Yrange)
-
-    
-    #################### Parameter search ####################
-
-    def param_search(self, params_ranges:list=None, params_free:list=None, params_relations:list=None,
-                 N_processes:int=1, runtime:int=None, iterations:int=None, filename="paramsearch", merge:bool=True)->None:
-        
-        reload_and_import("src.Model2HDM.methods_parameterSearch", "param_search")
-        
-        param_search(self, params_ranges, params_free, params_relations, N_processes, runtime, iterations, filename, merge)
-    
     
     
     

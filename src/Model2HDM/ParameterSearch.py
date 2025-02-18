@@ -23,8 +23,24 @@ from .constraints import * # type: ignore
 
 #################### General Methods ####################
 
+# child class?
+class ParamSearch:
+    # Add a folder inside the class
+    # Plot points inside a bin (like histogram)
+    def __init__(self, model):
+        self.default_point = self.calculate_default_point()
+    
+    def __init__(self, model):
+        pass
 
-
+    def add_point(self, point):
+        pass
+    
+    def get_point(self, index, include_V0_params = True, include_VCT_params = True, include_masses = True):
+        pass
+    
+    def calculate_default_point(self):
+        pass
 
 #################### Iterators ####################
 
