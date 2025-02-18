@@ -72,7 +72,6 @@ class ModelDataCalculator:
     
     def calculate_masses_gauge(self, subs_bgfield_values):
         M_numerical = self.M_kin.subs(subs_bgfield_values).evalf()
-        display(M_numerical)
         masses, states, R = diagonalize_numerical_matrix(M_numerical, sorting=True)
         return masses, R
     
@@ -133,8 +132,7 @@ class ModelDataCalculator:
     
     ########## Mass Data set calculators ##########
      
-    def calculate_massdata2D_level0(self, free_bgfield,
-                          N, Xrange, sorting=True):
+    def calculate_massdata2D_level0(self, N, Xrange, free_bgfield, sorting=True):
         
         X = np.linspace(Xrange[0], Xrange[1], N)
         Y = [0 for i in range(N)]
@@ -150,13 +148,20 @@ class ModelDataCalculator:
 
         return X, Y   
     
-    def calculate_massdata2D_level1(self, model, free_bgfield,
-                          N, Xrange,
-                          calc_potential=True, calc_mass=True, sorting=True):
+    def calculate_massdata2D_level1(self, N, Xrange, free_bgfield, sorting=True):
         
         X = np.linspace(Xrange[0], Xrange[1], N)
         Y = [0 for i in range(N)]
+        t0 = time.time()
         for i,x in enumerate(X):
+            
+            # Print progress
+            ti = time.time()
+            t = ti-t0
+            t_avg = t/(i+1)
+            print(f"| Progress: {i+1}/{N} at x={x:0.1f}={x/246:0.2f}v | Estimated time left: {sec_to_hms(t_avg*(N-i-1))} | Elapsed time: {sec_to_hms(t)} // {sec_to_hms(t_avg*N)} | Time per point: {t_avg:0.1f}s | " , end="\r")
+            
+            # Calculations
             subs_bgfield_values = {free_bgfield: x}
             CWcalculator = CWPotentialDerivativeCalculator(self, self.model, subs_bgfield_values)
             MCW = CWcalculator.second_derivative()
@@ -256,10 +261,12 @@ class CWPotentialDerivativeCalculator:
         #self.massStates_fermions = sp.Matrix(self.R_fermions) * sp.Matrix(model.massfields_fermions)
 
         # Potentials
-        self.V0 = MDC.V0_simplified.subs(subs_bgfield_values).evalf().subs({field:state for field,state in zip(model.massfields, self.massStates_higgs)})
-        self.L_kin = MDC.L_kin_simplified.subs(subs_bgfield_values).evalf().subs({field:state for field,state in zip(model.massfields_gauge, self.massStates_gauge)})
+        subs_massStates_higgs = {field:state for field,state in zip(model.fields, self.massStates_higgs)}
+        subs_massStates_gauge = {field:state for field,state in zip(model.fields_gauge, self.massStates_gauge)}
+        self.V0 = MDC.V0_simplified.subs(subs_bgfield_values).evalf().subs(subs_massStates_higgs).expand()
+        self.L_kin = MDC.L_kin_simplified.subs(subs_bgfield_values).evalf().subs(subs_massStates_gauge).expand()
         #self.L_yuk = MDC.L_yuk_simplified.subs(subs_bgfield_values).evalf().subs({field:state for field,state in zip(model.massfields_fermions, self.massStates_fermions)})
-        
+
         # Couplings
         self.L3_higgs = self.calculate_couplings3(self.V0, model.massfields, model.massfields)
         self.L3_gauge = self.calculate_couplings3(self.L_kin, model.fields_gauge, model.massfields)
@@ -269,46 +276,28 @@ class CWPotentialDerivativeCalculator:
         self.L4_gauge = self.calculate_couplings4(self.L_kin, model.fields_gauge, model.massfields)
         #self.L4_fermions = self.calculate_couplings4()
 
-    # Calculate trilinear couplings
-    def calculate_couplings3(self, V, fields1, fields2):
+
+    def first_derivative(self):
+        # First derivative terms
+        NCW_higgs = self.Ni(L3=self.L3_higgs, masses=self.masses_higgs, kT=3/2, coeff=1/2)
+        NCW_gauge = self.Ni(L3=self.L3_gauge, masses=self.masses_gauge, kT=3/2, coeff=3/2)
+        NCW_fermions = np.zeros(8) #Ni(L3, masses, kT, coeff)
+        NCW = NCW_higgs + NCW_gauge + NCW_fermions
+        NCW = self.epsilon * self.R_higgs @ NCW # numpy matrix mul (j to i)  #sp.Matrix(NCW)
+        NCW = np.where(np.abs(NCW) < self.threshold, 0, NCW)
+        return sp.Matrix(NCW)
+    
+    def second_derivative(self):
+        MCW_higgs = self.Hij(L3=self.L3_higgs, L4=self.L4_higgs, masses=self.masses_higgs, kT=3/2, coeff=1/2)
+        MCW_gauge = self.Hij(L3=self.L3_gauge, L4=self.L4_gauge, masses=self.masses_gauge, kT=3/2, coeff=3/2)
+        MCW_fermions = np.zeros((8,8)) # Hij(L3, L4, masses, kT, coeff)
+        MCW = MCW_higgs + MCW_gauge + MCW_fermions
+        MCW = self.epsilon * self.R_higgs.T @ (MCW+MCW.T)/2 @ self.R_higgs
+        MCW = np.where(np.abs(MCW) < self.threshold, 0, MCW)
+
+        return sp.Matrix(MCW)
         
-        fields_to_zero = {f:0 for f in fields1+fields2}
-        from itertools import permutations, product
-        L3 = np.zeros((len(fields1),len(fields1),len(fields2)))
-        #combinations3, S3 = compute_unique_permutations(8,3)
-        range1 = range(0,len(fields1))
-        range2 = range(0,len(fields2))
-        combinations3 = set(product(range1, range1, range2))
-        
-        for i,j,k in combinations3:
-            fieldterm = fields1[i]*fields1[j]*fields2[k]
-            term = V.coeff(fieldterm).expand().subs(fields_to_zero)
-            L3[i,j,k]  = sp.re(term)
-            #for a,b in permutations([i,j]):
-            #   L3[a,b,k] = sp.re(term)
-        
-        return L3
-
-    # Calculate quartic couplings
-    def calculate_couplings4(self, V, fields1, fields2):
-
-        from itertools import permutations, product
-        L4 = np.zeros((len(fields1),len(fields1),len(fields2),len(fields2)))
-        fields_to_zero = {f:0 for f in fields1+fields2}
-        #combinations4, S4 = compute_unique_permutations(8,4)
-        range1 = range(0,len(fields1))
-        range2 = range(0,len(fields2))
-        combinations4 = set(product(range1, range1, range2, range2))
-
-
-        for i,j,k,l in combinations4:
-            fieldterm = fields1[i]*fields1[j]*fields2[k]*fields2[l]
-            term = V.coeff(fieldterm).expand().subs(fields_to_zero)
-            L4[i,j,k,l] = term
-            #for a,b in permutations([i,j]):
-            #    L4[a,b,k,l] = term
-
-        return L4
+    ####### Helper functions #######
 
     # log term
     def f1(self, msq, mu):
@@ -358,7 +347,184 @@ class CWPotentialDerivativeCalculator:
         else: 
             return 1 + log1
 
+    # Calculate trilinear couplings (Optimized)
+    def calculate_couplings3(self, V, fields1, fields2):
+        n1 = len(fields1)
+        n2 = len(fields2)
+        L3 = np.empty((n1, n1, n2), dtype=object)
+        # Precompute the substitution dictionary.
+        fields_to_zero = {f: 0 for f in (fields1 + fields2)}
+        
+        # A cache to avoid recomputing the same fieldterm.
+        cache = {}
+        
+        # Loop only over i <= j assuming symmetry in the first two indices.
+        for i in range(n1):
+            for j in range(i, n1):
+                prod1 = fields1[i] * fields1[j]  # common product
+                for k in range(n2):
+                    fieldterm = prod1 * fields2[k]
+                    if fieldterm not in cache:
+                        # Expand and substitute only once per unique fieldterm.
+                        term = V.coeff(fieldterm).expand().subs(fields_to_zero)
+                        cache[fieldterm] = sp.re(term)
+                    value = cache[fieldterm]
+                    L3[i, j, k] = value
+                    if i != j:
+                        # Use symmetry to assign the swapped indices.
+                        L3[j, i, k] = value
+        return L3
+    
+    # calculate quartic couplings (Optimized)
+    def calculate_couplings4(self, V, fields1, fields2):
+        n1 = len(fields1)
+        n2 = len(fields2)
+        L4 = np.empty((n1, n1, n2, n2), dtype=object)
+        fields_to_zero = {f: 0 for f in (fields1 + fields2)}
+        cache = {}
+        
+        # Loop over indices in the first group assuming symmetry: i <= j.
+        for i in range(n1):
+            for j in range(i, n1):
+                prod1 = fields1[i] * fields1[j]
+                # Loop over indices in the second group assuming symmetry: k <= l.
+                for k in range(n2):
+                    for l in range(k, n2):
+                        fieldterm = prod1 * fields2[k] * fields2[l]
+                        if fieldterm not in cache:
+                            term = V.coeff(fieldterm).expand().subs(fields_to_zero)
+                            cache[fieldterm] = term
+                        value = cache[fieldterm]
+                        L4[i, j, k, l] = value
+                        # Now fill in all the symmetric entries.
+                        if i != j:
+                            L4[j, i, k, l] = value
+                        if k != l:
+                            L4[i, j, l, k] = value
+                        if i != j and k != l:
+                            L4[j, i, l, k] = value
+        return L4
+    
     def Ni(self, L3, masses, kT, coeff):
+        """
+        Compute the quantity Ncw[j] = sum_a L3[a,a,j] * masses[a] * (f1(masses[a], mu) - kT + 0.5)
+        and return coeff * Ncw.
+        
+        L3 is assumed to be a NumPy array of shape (n, n, 8), and masses is a list or array.
+        """
+        masses = np.array(masses)  # ensure it's a NumPy array
+        n = len(masses)
+        N = 8
+        
+        # Precompute f1 for each mass
+        f1_vals = np.array([self.f1(m, self.mu) for m in masses])
+        
+        # Extract the diagonal elements L3[a,a,:] for each a (resulting in an array of shape (n, N))
+        # One could also use np.einsum('aaj->aj', L3) if L3 is a full array.
+        L3_diag = np.array([L3[a, a, :] for a in range(n)])
+        
+        # Compute contributions: for each a, shape (n, N)
+        contributions = L3_diag * masses[:, None] * (f1_vals - kT + 0.5)[:, None]
+        
+        # Sum over a to get an array of shape (N,)
+        Ncw = contributions.sum(axis=0)
+        return coeff * Ncw
+
+    def Hij(self, L3, L4, masses, kT, coeff):
+        """
+        Compute a symmetric matrix Mcw[i,j] from the L3 and L4 couplings.
+        
+        The first term is:
+        sum_{a,b} L3[a,b,i] * L3[b,a,j] * (f2(masses[a], masses[b], mu) - kT + 0.5)
+        The second term (only if masses[a] != 0) is:
+        sum_{a} L4[a,a,i,j] * masses[a] * (f1(masses[a], mu) - kT + 0.5)
+        
+        L3 is assumed to have shape (n, n, 8) and L4 shape (n, n, 8, 8).
+        """
+        masses = np.array(masses)
+        n = len(masses)
+        N = 8
+        
+        # -----------------------------
+        # First term: use np.einsum for double sum over a and b.
+        # Precompute the f2 matrix F2[a,b] = self.f2(masses[a], masses[b], mu)
+        F2 = np.empty((n, n))
+        for a in range(n):
+            for b in range(n):
+                F2[a, b] = self.f2(masses[a], masses[b], self.mu)
+        factor = F2 - kT + 0.5
+        
+        # L3 has shape (n, n, N). We need L3[a,b,i] and L3[b,a,j].
+        # Use swapaxes to get L3_swapped[b,a,j] = L3[a,b,j].
+        L3_swapped = np.swapaxes(L3, 0, 1)
+        
+        # Compute the double sum over a and b:
+        # term1[i,j] = sum_{a,b} L3[a,b,i] * L3[b,a,j] * factor[a,b]
+        term1 = np.einsum('abi,abj,ab->ij', L3, L3_swapped, factor)
+        
+        # -----------------------------
+        # Second term: contributions from L4
+        # Precompute f1 for each mass, and only add if the mass is nonzero.
+        # (You might want to decide what to do when mass==0; here we simply set f1 to 0.)
+        f1_vals = np.array([self.f1(m, self.mu) if m != 0 else 0 for m in masses])
+        
+        # Extract the diagonal of L4: L4_diag[a,:,:] = L4[a,a,:,:] (shape: (n, N, N))
+        L4_diag = np.array([L4[a, a, :, :] for a in range(n)])
+        
+        # term2[i,j] = sum_{a} L4[a,a,i,j] * masses[a] * (f1_vals[a] - kT + 0.5)
+        term2 = np.einsum('aij,a->ij', L4_diag, masses * (f1_vals - kT + 0.5))
+        
+        # -----------------------------
+        # Combine both contributions
+        Mcw = term1 + term2
+        
+        
+        return coeff * Mcw
+
+    ####### "Raw" unoptimized helper functions #######
+
+    # Calculate trilinear couplings
+    def calculate_couplings3_unoptimized(self, V, fields1, fields2):
+        
+        fields_to_zero = {f:0 for f in fields1+fields2}
+        from itertools import permutations, product
+        L3 = np.zeros((len(fields1),len(fields1),len(fields2)))
+        #combinations3, S3 = compute_unique_permutations(8,3)
+        range1 = range(0,len(fields1))
+        range2 = range(0,len(fields2))
+        combinations3 = set(product(range1, range1, range2))
+        
+        for i,j,k in combinations3:
+            fieldterm = fields1[i]*fields1[j]*fields2[k]
+            term = V.coeff(fieldterm).expand().subs(fields_to_zero)
+            L3[i,j,k]  = sp.re(term)
+            #for a,b in permutations([i,j]):
+            #   L3[a,b,k] = sp.re(term)
+        
+        return L3
+
+    # Calculate quartic couplings
+    def calculate_couplings4_unoptimized(self, V, fields1, fields2):
+
+        from itertools import permutations, product
+        L4 = np.zeros((len(fields1),len(fields1),len(fields2),len(fields2)))
+        fields_to_zero = {f:0 for f in fields1+fields2}
+        #combinations4, S4 = compute_unique_permutations(8,4)
+        range1 = range(0,len(fields1))
+        range2 = range(0,len(fields2))
+        combinations4 = set(product(range1, range1, range2, range2))
+
+
+        for i,j,k,l in combinations4:
+            fieldterm = fields1[i]*fields1[j]*fields2[k]*fields2[l]
+            term = V.coeff(fieldterm).expand().subs(fields_to_zero)
+            L4[i,j,k,l] = term
+            #for a,b in permutations([i,j]):
+            #    L4[a,b,k,l] = term
+
+        return L4
+
+    def Ni_unoptimized(self, L3, masses, kT, coeff):
         N = 8
         n = len(masses)
         Ncw = np.zeros(N) 
@@ -369,7 +535,7 @@ class CWPotentialDerivativeCalculator:
         return coeff * Ncw
         pass
 
-    def Hij(self, L3, L4, masses, kT, coeff):
+    def Hij_unoptimized(self, L3, L4, masses, kT, coeff):
         N = 8
         n = len(masses)
         Mcw = np.zeros((N,N))
@@ -386,26 +552,6 @@ class CWPotentialDerivativeCalculator:
         return coeff * Mcw  
     
 
-    def first_derivative(self):
-        # First derivative terms
-        NCW_higgs = self.Ni(L3=self.L3_higgs, masses=self.masses_higgs, kT=3/2, coeff=1/2)
-        NCW_gauge = self.Ni(L3=self.L3_gauge, masses=self.masses_gauge, kT=3/2, coeff=3/2)
-        NCW_fermions = np.zeros(8) #Ni(L3, masses, kT, coeff)
-        NCW = NCW_higgs + NCW_gauge + NCW_fermions
-        NCW = self.epsilon * self.R_higgs @ NCW # numpy matrix mul (j to i)  #sp.Matrix(NCW)
-        NCW = np.where(np.abs(NCW) < self.threshold, 0, NCW)
-        return sp.Matrix(NCW)
-    
-    def second_derivative(self):
-        MCW_higgs = self.Hij(L3=self.L3_higgs, L4=self.L4_higgs, masses=self.masses_higgs, kT=3/2, coeff=1/2)
-        MCW_gauge = self.Hij(L3=self.L3_gauge, L4=self.L4_gauge, masses=self.masses_gauge, kT=3/2, coeff=3/2)
-        MCW_fermions = np.zeros((8,8)) # Hij(L3, L4, masses, kT, coeff)
-        MCW = MCW_higgs + MCW_gauge + MCW_fermions
-        MCW = self.epsilon * self.R_higgs.T @ (MCW+MCW.T)/2 @ self.R_higgs
-        MCW = np.where(np.abs(MCW) < self.threshold, 0, MCW)
-
-        return sp.Matrix(MCW)
-        
 # Class for calculating the Branching ratios
 class BranchingRatios:
     pass

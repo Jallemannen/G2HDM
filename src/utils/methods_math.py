@@ -148,14 +148,62 @@ def diagonalize_numerical_matrix(matrix, sorting=False):
     
     if sorting: # Add eigenvecotor sorting later!
         if block_diagonal:
-            indicies_top = np.argsort(eigenvalues[0:4])
-            indicies_bottom = np.argsort(eigenvalues[4:8])
+            indicies_top = np.argsort(eigenvalues[0:n])
+            indicies_bottom = np.argsort(eigenvalues[n:N])
             eigenvalues = np.array([eigenvalues_top[i] for i in indicies_top] + [eigenvalues_bottom[i] for i in indicies_bottom])
         else:
             indicies = np.argsort(eigenvalues)
             eigenvalues = np.array([eigenvalues[i] for i in indicies])
 
     return eigenvalues, eigenvectors, R
+
+
+def sort_eigenvalues(evals_list, evecs_list=None):
+    
+    from scipy.optimize import linear_sum_assignment
+    num_steps = len(evals_list)
+    
+    # Case 1: No eigenvector data provided. Sort each step independently.
+    if evecs_list is None:
+        sorted_evals = np.array([np.sort(evals) for evals in evals_list])
+        return sorted_evals
+
+    # Case 2: Use eigenvectors to match branches across parameter steps.
+    sorted_evals = []
+    sorted_evecs = []
+    
+    # For the first parameter value, use the given order as baseline.
+    sorted_evals.append(evals_list[0])
+    sorted_evecs.append(evecs_list[0])
+    prev_evecs = evecs_list[0]  # expected shape: (n, n) with eigenvectors as columns
+
+    for i in range(1, num_steps):
+        current_evals = evals_list[i]
+        current_evecs = evecs_list[i]
+        
+        # Compute the cost matrix based on the absolute overlap between eigenvectors.
+        # A higher overlap means a lower cost (hence the minus sign).
+        cost = -np.abs(prev_evecs.conj().T @ current_evecs)
+        
+        # Solve the assignment problem to match eigenvector branches.
+        row_ind, col_ind = linear_sum_assignment(cost)
+        
+        # Reorder the current eigenvalues and eigenvectors to match the previous order.
+        current_evals_sorted = current_evals[col_ind]
+        current_evecs_sorted = current_evecs[:, col_ind]
+        
+        sorted_evals.append(current_evals_sorted)
+        sorted_evecs.append(current_evecs_sorted)
+        
+        # Update previous eigenvectors for the next iteration.
+        prev_evecs = current_evecs_sorted
+
+    sorted_evals = np.array(sorted_evals)
+    
+    return sorted_evals, sorted_evecs
+    
+    
+    
 
 
 def get_independent_equations_indices(equations, symbols, include_constant=False):

@@ -22,6 +22,12 @@ def present(*args, func=display, **kwargs):
         func(*args, **kwargs)
     else:
         pass
+    
+def sec_to_hms(secs:float)->str:
+    h = int(secs // 3600)
+    m = int((secs % 3600) // 60)
+    s = int(secs % 60)
+    return f"{h}:{m:02d}:{s:02d}"
 
 # Subs complex variables to re and im parts in a list of variables
 def subs_complex_params(params:list, include_zeros:bool=True):

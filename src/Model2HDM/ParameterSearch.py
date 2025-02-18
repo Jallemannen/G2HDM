@@ -27,6 +27,7 @@ from .constraints import * # type: ignore
 class ParamSearch:
     # Add a folder inside the class
     # Plot points inside a bin (like histogram)
+    # Include all 8 masses when saving the params
     def __init__(self, model):
         self.default_point = self.calculate_default_point()
     
