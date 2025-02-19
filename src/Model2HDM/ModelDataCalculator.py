@@ -66,11 +66,16 @@ class ModelDataCalculator:
         self.M_yuk = None
 
         # Counterterm values
+        self.MCT = None
+
+
+    def assign_counterterm_values(self):
+        # Calculate the VCT values
         VCT_params_values = self.counterterm_values()
-        self.subs_VCT_params_values = {param:value for param, value in zip(model.VCT_params, VCT_params_values)}
-        self.VCT_simplified = model.VCT.subs(self.subs_VCT_params_values | self.subs_V0_params_values | self.subs_VEV_values).evalf()
-        self.MCT = sp.hessian(self.VCT_simplified, model.fields).subs(self.subs_fields_to_zero)
-        
+        self.subs_VCT_params_values = {param:value for param, value in zip(self.model.VCT_params, VCT_params_values)}
+        self.VCT_simplified = self.model.VCT.subs(self.subs_VCT_params_values | self.subs_V0_params_values | self.subs_VEV_values).evalf()
+        self.MCT = sp.hessian(self.VCT_simplified, self.model.fields).subs(self.subs_fields_to_zero)
+
 
     ########## Numerical Solutions ##########
     
@@ -146,6 +151,7 @@ class ModelDataCalculator:
         
         X = np.linspace(Xrange[0], Xrange[1], N)
         Y = [0 for i in range(N)]
+        
         for i,x in enumerate(X):
             M0_numerical = self.M0.subs({free_bgfield: x})
             M0_numerical = np.array(M0_numerical).astype(np.float64)
@@ -163,9 +169,12 @@ class ModelDataCalculator:
         X = np.linspace(Xrange[0], Xrange[1], N)
         Y = [0 for i in range(N)]
         
+        # Precompile functions
+        self.assign_counterterm_values(self)
         MCT_func = sp.lambdify(free_bgfield, self.MCT, "numpy")
         M0_func  = sp.lambdify(free_bgfield, self.M0, "numpy")
         #gc.collect()
+        
         t0 = time.time()
         for i,x in enumerate(X):
             t_last = time.time()

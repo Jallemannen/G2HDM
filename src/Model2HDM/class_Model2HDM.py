@@ -8,7 +8,7 @@ import time
 
 # Custom Packages
 from .methods_Model2HDM import *
-from .ParameterSearch import *
+#from .ParameterSearch import *
 #from .constraints import *
 
 # Custom Packages, Utils
@@ -27,7 +27,7 @@ class Model2HDM:
         # Paths for saving and loading data
         self.name = name
         project_root = os.path.abspath(os.path.join(os.getcwd(), '..'))
-        self.path_root = os.path.join(project_root, "Models", "Saved models", self.name)
+        self.path_root = os.path.join(project_root, "Models", "Saved_models", self.name)
         self.path_modeldata = os.path.join(self.path_root, "model_data")
         self.path_model = os.path.join(self.path_modeldata, "model.pkl")
         self.path_data = os.path.join(self.path_root, "Data")

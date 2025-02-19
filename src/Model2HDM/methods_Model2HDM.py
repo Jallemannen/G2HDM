@@ -28,7 +28,7 @@ def load_model(name:str, path:str=None, project_root = None):
     if project_root is None:
         project_root = os.path.abspath(os.path.join(os.getcwd(), '..'))
     if path == None:
-        path = os.path.join(project_root, "Models", "Saved models", f"{name}", "model_data", "model.pkl")
+        path = os.path.join(project_root, "Models", "Saved_models", f"{name}", "model_data", "model.pkl")
 
     return load_pkl(path)    
 
@@ -303,24 +303,30 @@ def generate_level0_masses(model:object, VEV:bool=False, apply_tadpole:bool=True
             M_charged = M0[4:, 4:] 
             # Extract eigenvalues
             cprint("Charged mass eigenvalues:", show=show_solution)
-            M0_charged_eigenvalues = [val for val in list(M_charged.eigenvals())]
+            #M0_charged_eigenvalues = [val for val in list(M_charged.eigenvals())]
+            M0_charged_eigenvalues = [eigen for eigen, multiplicity in M_charged.eigenvals().items()
+                                        for _ in range(multiplicity)] 
             
             for i, val in enumerate(M0_charged_eigenvalues):
                 cdisplay(Math(f"m_{i+1} = " + sp.latex(val)), show=show_solution)
             
             cprint("Neutral mass eigenvalues:", show=show_solution)
-            M0_neutral_eigenvalues = [val for val in list(M_neutral.eigenvals())]  
+            #M0_neutral_eigenvalues = [val for val in list(M_neutral.eigenvals())]
+            M0_neutral_eigenvalues = [eigen for eigen, multiplicity in M_neutral.eigenvals().items()
+                                        for _ in range(multiplicity)] 
             
             for i, val in enumerate(M0_neutral_eigenvalues):
                 cdisplay(Math(f"m_{i+1} = " + sp.latex(val)), show=show_solution)
             
-            # change order, neutral first.
-            M0_eigenvalues = M0_charged_eigenvalues + M0_neutral_eigenvalues
+            # neutral first
+            M0_eigenvalues = M0_neutral_eigenvalues + M0_charged_eigenvalues 
             
         else:
         
             cprint("Mass eigenvalues:", show=show_solution)
-            M0_eigenvalues = [val for val in list(M0.eigenvals())]
+            #M0_eigenvalues = [val for val in list(M0.eigenvals())]
+            M0_eigenvalues = [eigen for eigen, multiplicity in M0.eigenvals().items()
+                                for _ in range(multiplicity)] 
             
             for i, val in enumerate(M0_eigenvalues):
                 cdisplay(Math(f"m_{i+1} = " + sp.latex(val)), show=show_solution)
@@ -349,7 +355,7 @@ def generate_level0_masses(model:object, VEV:bool=False, apply_tadpole:bool=True
     
     # Return the results
     #return tadpole_eqs, sol_tadpole_eqs, M0, M_charged, M_neutral, M0_charged_eigenvalues, M0_neutral_eigenvalues
-
+    
 # Solve tree-level masses
 def solve_counterterms(model, extra_eqs=None, show_procedure=True, show_solution=True):
     
