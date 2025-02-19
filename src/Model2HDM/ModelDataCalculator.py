@@ -6,9 +6,14 @@ import matplotlib.pyplot as plt
 import time as time
 from IPython.display import display, Math  
 
+# Utils
+from numba import jit
+from functools import lru_cache
+import psutil
+
 # Custom imports
 from .class_Model2HDM import Model2HDM
-from .potentials import *
+from .methods_Model2HDM import *
 from ..utils.methods_math import *
 from ..utils.methods_data import *
 from ..utils.methods_general import *
@@ -20,7 +25,11 @@ from src.utils import constants as const
 
 # Main/parent class
 class ModelDataCalculator:
-    """Generates numerical solutions for a given set of parameters and VEVs, which depends on omega."""
+    """
+    Generates numerical solutions for a given set of parameters and VEVs, which depends on omega.
+        
+    * Does not modify the model itself, thus multiple calculators can be created for different parameter sets.
+    """
     def __init__(self, model:Model2HDM, subs_V0_params_values:dict, subs_VEV_values:dict, subs_bgfield_values:dict={}):
         
         self.model = model
@@ -124,11 +133,12 @@ class ModelDataCalculator:
         return VCT_params_values
     
     
-    def VCW_first_derivative(self, subs_bgfield_values):
-        return CWPotentialDerivativeCalculator(self, self.model, subs_bgfield_values).first_derivative()
+    def VCW_first_derivative(self, subs_bgfield_values, regulator=246**2):
+        return CWPotentialDerivativeCalculator(self, self.model, subs_bgfield_values, regulator).first_derivative()
 
-    def VCW_second_derivative(self, subs_bgfield_values):  
-        return CWPotentialDerivativeCalculator(self, self.model, subs_bgfield_values).second_derivative()
+    def VCW_second_derivative(self, subs_bgfield_values, regulator=246**2): 
+    
+        return CWPotentialDerivativeCalculator(self, self.model, subs_bgfield_values, regulator).second_derivative()
     
     ########## Mass Data set calculators ##########
      
@@ -149,30 +159,40 @@ class ModelDataCalculator:
         return X, Y   
     
     def calculate_massdata2D_level1(self, N, Xrange, free_bgfield, sorting=True):
-        
+        import gc
         X = np.linspace(Xrange[0], Xrange[1], N)
         Y = [0 for i in range(N)]
+        
+        MCT_func = sp.lambdify(free_bgfield, self.MCT, "numpy")
+        M0_func  = sp.lambdify(free_bgfield, self.M0, "numpy")
+        #gc.collect()
         t0 = time.time()
         for i,x in enumerate(X):
-            
-            # Print progress
-            ti = time.time()
-            t = ti-t0
-            t_avg = t/(i+1)
-            print(f"| Progress: {i+1}/{N} at x={x:0.1f}={x/246:0.2f}v | Estimated time left: {sec_to_hms(t_avg*(N-i-1))} | Elapsed time: {sec_to_hms(t)} // {sec_to_hms(t_avg*N)} | Time per point: {t_avg:0.1f}s | " , end="\r")
-            
+            t_last = time.time()
             # Calculations
             subs_bgfield_values = {free_bgfield: x}
             CWcalculator = CWPotentialDerivativeCalculator(self, self.model, subs_bgfield_values)
             MCW = CWcalculator.second_derivative()
-            MCT = self.MCT.subs(subs_bgfield_values).evalf()
-            M0 = self.M0.subs(subs_bgfield_values).evalf()
-            Meff = M0 + MCT + MCW
+            #MCT = self.MCT.subs(subs_bgfield_values).evalf()
+            #M0 = self.M0.subs(subs_bgfield_values).evalf()
+            M0 = M0_func(x)
+            MCT = MCT_func(x)
+            Meff = M0 + MCT + np.array(MCW).astype(np.float64)
             masses, field_states, R = diagonalize_numerical_matrix(Meff, sorting=sorting)
             masses_new = np.zeros(8)
             for j, m in enumerate(masses):
                 masses_new[j] = np.sign(m)*np.sqrt(np.abs(m))
             Y[i] = masses_new
+            
+            # Print progress
+            ti = time.time()
+            t = ti-t0
+            t_avg = t/(i+1)
+            t_now = ti - t_last
+            print(f"| Progress: {i+1}/{N} at x={x:0.1f}={x/246:0.2f}v | Estimated time left: {sec_to_hms(t_avg*(N-i-1))} | Elapsed time: {sec_to_hms(t)} // {sec_to_hms(t_avg*N)} | Time for point: {t_now:0.1f}s , avg: {t_avg:0.1f}s | " , end="\r")
+            #if i % 10 == 0:
+            #    gc.collect()
+            
         Y = np.transpose(Y)
         
         return X, Y
@@ -239,7 +259,7 @@ class CWPotentialDerivativeCalculator:
     threshold = 1e-10  
     epsilon = 1/(4*np.pi)**2
     
-    def __init__(self, MDC:ModelDataCalculator, model:Model2HDM, subs_bgfield_values:dict):
+    def __init__(self, MDC:ModelDataCalculator, model:Model2HDM, subs_bgfield_values:dict, regulator=246**2): #
         
         self.model = model
         self.MDC = MDC
@@ -255,9 +275,17 @@ class CWPotentialDerivativeCalculator:
         self.masses_gauge, self.R_gauge = MDC.calculate_masses_gauge(subs_bgfield_values)
         #self.masses_fermions, self.R_fermions = MDC.calculate_masses_fermions(subs_bgfield_values)
 
+        # Add a regulator to the masses
+        #display(self.masses_higgs)
+        self.regulator = regulator
+        self.masses_higgs = self.masses_higgs + self.regulator
+        #display(self.masses_higgs)
+
         # Fields
-        self.massStates_higgs = sp.Matrix(self.R_higgs) * sp.Matrix(model.massfields)
-        self.massStates_gauge = sp.Matrix(self.R_gauge) * sp.Matrix(model.massfields_gauge)
+        #self.massStates_higgs = sp.Matrix(self.R_higgs) * sp.Matrix(model.massfields)
+        #self.massStates_gauge = sp.Matrix(self.R_gauge) * sp.Matrix(model.massfields_gauge)
+        self.massStates_higgs = self.R_higgs @ model.massfields
+        self.massStates_gauge = self.R_gauge @ model.massfields_gauge
         #self.massStates_fermions = sp.Matrix(self.R_fermions) * sp.Matrix(model.massfields_fermions)
 
         # Potentials
@@ -275,7 +303,11 @@ class CWPotentialDerivativeCalculator:
         self.L4_higgs = self.calculate_couplings4(self.V0, model.massfields, model.massfields)
         self.L4_gauge = self.calculate_couplings4(self.L_kin, model.fields_gauge, model.massfields)
         #self.L4_fermions = self.calculate_couplings4()
-
+        
+        #print("Debug")
+        #display(self.L4_higgs[0,0,0])
+        #display(sp.Matrix(self.R_higgs))
+        #display(self.masses_higgs)
 
     def first_derivative(self):
         # First derivative terms
@@ -285,15 +317,16 @@ class CWPotentialDerivativeCalculator:
         NCW = NCW_higgs + NCW_gauge + NCW_fermions
         NCW = self.epsilon * self.R_higgs @ NCW # numpy matrix mul (j to i)  #sp.Matrix(NCW)
         NCW = np.where(np.abs(NCW) < self.threshold, 0, NCW)
-        return sp.Matrix(NCW)
+        return sp.Matrix(NCW) 
     
     def second_derivative(self):
         MCW_higgs = self.Hij(L3=self.L3_higgs, L4=self.L4_higgs, masses=self.masses_higgs, kT=3/2, coeff=1/2)
         MCW_gauge = self.Hij(L3=self.L3_gauge, L4=self.L4_gauge, masses=self.masses_gauge, kT=3/2, coeff=3/2)
         MCW_fermions = np.zeros((8,8)) # Hij(L3, L4, masses, kT, coeff)
         MCW = MCW_higgs + MCW_gauge + MCW_fermions
-        MCW = self.epsilon * self.R_higgs.T @ (MCW+MCW.T)/2 @ self.R_higgs
+        MCW = self.epsilon * self.R_higgs @ (MCW+MCW.T)/2 @ self.R_higgs.T
         MCW = np.where(np.abs(MCW) < self.threshold, 0, MCW)
+        
 
         return sp.Matrix(MCW)
         
@@ -301,7 +334,6 @@ class CWPotentialDerivativeCalculator:
 
     # log term
     def f1(self, msq, mu):
-
         sign = 1
         if msq < 0:
             msq = -msq
@@ -310,12 +342,16 @@ class CWPotentialDerivativeCalculator:
         if msq==0: #.is_zero:
             result = 0
         else:
-            result = sign*sp.log(msq/mu**2) #m * (sp.log(m/mu**2)-kT+1/2)
+            # Not IR div since this will be mult by the mass later
+            # Add threshold here?
+            # Apply IR regulator 
+            msq += self.regulator
+            result = sign*np.log(msq/mu**2) #m * (sp.log(m/mu**2)-kT+1/2)
         return result
-        
+
     # log term 2, with regulator f2
     def f2(self, m1sq, m2sq, mu):
-        
+        #return 1
         sign1 = 1
         sign2 = 1
         if m1sq < 0:
@@ -325,38 +361,53 @@ class CWPotentialDerivativeCalculator:
             m2sq = -m2sq
             sign2 = -1
         
+        # Apply IR regulator to all masses
+        m1sq_R = m1sq + self.regulator
+        m2sq_R = m2sq + self.regulator
+        
         # calc
         log1 = 0
         log2 = 0
         if m1sq == 0 and m2sq == 0:
             return 1
+        if np.abs(m1sq-m2sq)<1e-5:
+            return 1
         if m1sq != 0:
-            log1 = sign1*sp.log(m1sq/mu**2)
-            log2 = 0
+            log1 = sign1*np.log(m1sq_R/mu**2)
+        if m2sq != 0: #and sp.Abs(m1sq-m2sq)>1e-5:
+            log2 = sign2*np.log(m2sq_R/mu**2)
+        else:
+            return 1 + log1
             
-        if sp.Abs(m1sq-m2sq)>1e-5: # add threshold
+        return (m1sq*log1 - m2sq*log2)/(m1sq-m2sq)
+
+            
+        """if sp.Abs(m1sq-m2sq)>1e-5: # add threshold
             log2 = 0  
             if m2sq != 0:
-                log2 = sign2*sp.log(m2sq/mu**2)
+                log2 = sign2*sp.log(m2sq_R/mu**2)
             if m1sq == 0:
                 return log2
-            if m2sq == 0:
+            elif m2sq == 0:
                 return log1
             else:
-                return (m1sq*log1 - m2sq*log2)/(m1sq-m2sq) 
+                #print(log1, m2sq/m1sq, (m1sq*sp.Abs(log1) - m2sq*sp.Abs(log2))/(m1sq-m2sq))
+                return (m1sq*sp.Abs(log1) - m2sq*sp.Abs(log2))/(m1sq-m2sq) #log1/(1-m2sq/m1sq)
         else: 
-            return 1 + log1
-
+            return 1 + log1"""
+    
     # Calculate trilinear couplings (Optimized)
+    #@jit
     def calculate_couplings3(self, V, fields1, fields2):
         n1 = len(fields1)
         n2 = len(fields2)
-        L3 = np.empty((n1, n1, n2), dtype=object)
-        # Precompute the substitution dictionary.
+        #L3 = np.empty((n1, n1, n2), dtype=object)
+        L3 = np.zeros((n1, n1, n2), dtype=np.float64)
         fields_to_zero = {f: 0 for f in (fields1 + fields2)}
-        
         # A cache to avoid recomputing the same fieldterm.
         cache = {}
+        # Create a Poly object over all the fields.
+        polyV = sp.Poly(V, list(set(fields1 + fields2)))
         
         # Loop only over i <= j assuming symmetry in the first two indices.
         for i in range(n1):
@@ -366,8 +417,10 @@ class CWPotentialDerivativeCalculator:
                     fieldterm = prod1 * fields2[k]
                     if fieldterm not in cache:
                         # Expand and substitute only once per unique fieldterm.
-                        term = V.coeff(fieldterm).expand().subs(fields_to_zero)
-                        cache[fieldterm] = sp.re(term)
+                        #term = V.coeff(fieldterm).subs(fields_to_zero) #Costly part
+                        coeff = polyV.coeff_monomial(fieldterm)
+                        term = coeff.subs(fields_to_zero)
+                        cache[fieldterm] = np.float64(term) #sp.re(term)
                     value = cache[fieldterm]
                     L3[i, j, k] = value
                     if i != j:
@@ -376,12 +429,17 @@ class CWPotentialDerivativeCalculator:
         return L3
     
     # calculate quartic couplings (Optimized)
+    #@jit
     def calculate_couplings4(self, V, fields1, fields2):
         n1 = len(fields1)
         n2 = len(fields2)
-        L4 = np.empty((n1, n1, n2, n2), dtype=object)
+        #L4 = np.empty((n1, n1, n2, n2), dtype=object)
+        L4 = np.zeros((n1, n1, n2, n2), dtype=np.float64)
         fields_to_zero = {f: 0 for f in (fields1 + fields2)}
+        # A cache to avoid recomputing the same fieldterm.
         cache = {}
+        # Create a Poly object over all the fields.
+        polyV = sp.Poly(V, list(set(fields1 + fields2)))
         
         # Loop over indices in the first group assuming symmetry: i <= j.
         for i in range(n1):
@@ -392,8 +450,10 @@ class CWPotentialDerivativeCalculator:
                     for l in range(k, n2):
                         fieldterm = prod1 * fields2[k] * fields2[l]
                         if fieldterm not in cache:
-                            term = V.coeff(fieldterm).expand().subs(fields_to_zero)
-                            cache[fieldterm] = term
+                            #term = V.coeff(fieldterm).subs(fields_to_zero) #Costly part
+                            coeff = polyV.coeff_monomial(fieldterm)
+                            term = coeff.subs(fields_to_zero)
+                            cache[fieldterm] = np.float64(term)
                         value = cache[fieldterm]
                         L4[i, j, k, l] = value
                         # Now fill in all the symmetric entries.
@@ -405,6 +465,7 @@ class CWPotentialDerivativeCalculator:
                             L4[j, i, l, k] = value
         return L4
     
+    #@jit
     def Ni(self, L3, masses, kT, coeff):
         """
         Compute the quantity Ncw[j] = sum_a L3[a,a,j] * masses[a] * (f1(masses[a], mu) - kT + 0.5)
@@ -422,7 +483,6 @@ class CWPotentialDerivativeCalculator:
         # Extract the diagonal elements L3[a,a,:] for each a (resulting in an array of shape (n, N))
         # One could also use np.einsum('aaj->aj', L3) if L3 is a full array.
         L3_diag = np.array([L3[a, a, :] for a in range(n)])
-        
         # Compute contributions: for each a, shape (n, N)
         contributions = L3_diag * masses[:, None] * (f1_vals - kT + 0.5)[:, None]
         
@@ -430,6 +490,7 @@ class CWPotentialDerivativeCalculator:
         Ncw = contributions.sum(axis=0)
         return coeff * Ncw
 
+    #@jit
     def Hij(self, L3, L4, masses, kT, coeff):
         """
         Compute a symmetric matrix Mcw[i,j] from the L3 and L4 couplings.
@@ -482,6 +543,40 @@ class CWPotentialDerivativeCalculator:
         return coeff * Mcw
 
     ####### "Raw" unoptimized helper functions #######
+
+    # log term 2, IR divergent
+    def f2_IRDIV(self, m1sq, m2sq, mu):
+        
+        sign1 = 1
+        sign2 = 1
+        if m1sq < 0:
+            m1sq = -m1sq
+            sign1 = -1
+        if m2sq < 0:
+            m2sq = -m2sq
+            sign2 = -1
+        
+        # calc
+        log1 = 0
+        log2 = 0
+        if m1sq == 0 and m2sq == 0:
+            return 1
+        if m1sq != 0:
+            log1 = sign1*sp.log(m1sq/mu**2)
+            log2 = 0
+            
+        if sp.Abs(m1sq-m2sq)>1e-5: # add threshold
+            log2 = 0  
+            if m2sq != 0:
+                log2 = sign2*sp.log(m2sq/mu**2)
+            if m1sq == 0:
+                return log2
+            if m2sq == 0:
+                return log1
+            else:
+                return (m1sq*log1 - m2sq*log2)/(m1sq-m2sq) 
+        else: 
+            return 1 + log1
 
     # Calculate trilinear couplings
     def calculate_couplings3_unoptimized(self, V, fields1, fields2):
@@ -547,7 +642,7 @@ class CWPotentialDerivativeCalculator:
                             logf2 = self.f2(masses[a],masses[b],self.mu)
                             Mcw[i,j] += L3[a][b][i] * L3[b][a][j] * (logf2-kT+1/2) 
                             if masses[a] != 0:
-                                logf1 = f1(masses[a],self.mu)
+                                logf1 = self.f1(masses[a],self.mu)
                                 Mcw[i,j] += L4[a][a][i][j] * masses[a] * (logf1-kT+1/2)
         return coeff * Mcw  
     

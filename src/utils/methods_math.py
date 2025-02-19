@@ -82,7 +82,8 @@ def linear_solve(eq_list, var_list, include_trivial_solutions=False):
 # ADD: Include all masses! (eigenvalues)
 def diagonalize_numerical_matrix(matrix, sorting=False):
     """
-    Diagonalizes a matrix using SymPy.
+    Diagonalizes a numerical matrix using numpy. 
+    Assumes symmetric matrix.
 
     Args:
         matrix: A SymPy Matrix.
@@ -90,7 +91,78 @@ def diagonalize_numerical_matrix(matrix, sorting=False):
     Returns:
         A tuple containing the diagonal matrix and the transformation matrix.
     """
+    
+    threshold = 1e-10
 
+    # If matrix is a sympy Matrix, check that all entries are numbers, then convert.
+    if isinstance(matrix, sp.Matrix):
+        if all(entry.is_number for entry in matrix):
+            # Convert using list-of-lists to get proper numerical (float) values.
+            matrix = np.array(matrix.tolist(), dtype=np.float64)
+        else:
+            raise ValueError("Matrix is not numerical.")
+    elif isinstance(matrix, list):
+        matrix = np.array(matrix, dtype=np.float64)
+    elif not isinstance(matrix, np.ndarray):
+        raise ValueError("Matrix is not a valid type or could not be converted to a numpy array.")
+
+    # Ensure matrix is square.
+    if matrix.shape[0] != matrix.shape[1]:
+        raise ValueError("Matrix must be square.")
+
+    N = matrix.shape[0]
+    block_diagonal = False
+
+    # Check for block-diagonality only if N is even.
+    if N % 2 == 0:
+        n = N // 2
+        # Check that both off-diagonal blocks are near zero.
+        if (np.allclose(matrix[0:n, n:N], 0, atol=threshold) and 
+            np.allclose(matrix[n:N, 0:n], 0, atol=threshold)):
+            block_diagonal = True
+
+    if block_diagonal:
+        n = N // 2
+        m_top = matrix[0:n, 0:n]
+        m_bottom = matrix[n:N, n:N]
+
+        eigenvalues_top, R_top = np.linalg.eigh(m_top)
+        eigenvalues_bottom, R_bottom = np.linalg.eigh(m_bottom)
+
+        # Optionally sort each block (np.linalg.eigh already returns sorted eigenvalues;
+        # but if you need additional control, you can sort here)
+        if sorting:
+            top_indices = np.argsort(eigenvalues_top)
+            bottom_indices = np.argsort(eigenvalues_bottom)
+            eigenvalues_top = eigenvalues_top[top_indices]
+            eigenvalues_bottom = eigenvalues_bottom[bottom_indices]
+            R_top = R_top[:, top_indices]
+            R_bottom = R_bottom[:, bottom_indices]
+
+        eigenvalues = np.concatenate((eigenvalues_top, eigenvalues_bottom))
+        # Build block-diagonal eigenvector matrix.
+        R = np.block([[R_top, np.zeros((n, n))],
+                      [np.zeros((n, n)), R_bottom]])
+    else:
+        # For a general symmetric matrix, np.linalg.eigh returns sorted eigenvalues.
+        eigenvalues, R = np.linalg.eigh(matrix)
+
+    # Since R is orthonormal, we can verify the diagonalization via:    D_reconstructed = R.T @ matrix @ R
+    """D_reconstructed = R.T @ matrix @ R
+    D_reconstructed[np.abs(D_reconstructed) < threshold] = 0
+    D = D_reconstructed"""
+
+    eigenvectors = R
+
+    return eigenvalues, eigenvectors, R
+    
+    
+    
+    
+    
+    
+    
+    """
     #use_numpy = False
     #use_sympy = True
     threshold = 1e-10
@@ -155,7 +227,7 @@ def diagonalize_numerical_matrix(matrix, sorting=False):
             indicies = np.argsort(eigenvalues)
             eigenvalues = np.array([eigenvalues[i] for i in indicies])
 
-    return eigenvalues, eigenvectors, R
+    return eigenvalues, eigenvectors, R"""
 
 
 def sort_eigenvalues(evals_list, evecs_list=None):

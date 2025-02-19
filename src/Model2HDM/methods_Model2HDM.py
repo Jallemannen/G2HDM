@@ -13,7 +13,6 @@ from IPython.display import display, Math
 
 # Custom imports
 #from .class_Model2HDM import Model2HDM
-from .potentials import *
 from ..utils.methods_math import *
 from ..utils.methods_data import *
 from ..utils.methods_general import *

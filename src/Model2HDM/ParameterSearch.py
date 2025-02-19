@@ -18,7 +18,7 @@ from ..MultiProcessing.methods_MultiProcessing import *
 #
 #from .class_Model2HDM import Model2HDM
 from .methods_Model2HDM import *
-from .constraints import * # type: ignore
+from .constraints_ParameterSearch import * # type: ignore
 
 
 #################### General Methods ####################

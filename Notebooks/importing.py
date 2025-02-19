@@ -5,6 +5,7 @@ import sys
 import os
 import importlib
 import inspect
+from IPython import get_ipython
 
 #################### Methods ####################
 
@@ -14,10 +15,33 @@ def declare_project_root():
         sys.path.insert(0, project_root)
     return project_root
 
+def in_jupyter():
+    try:
+        shell = get_ipython().__class__.__name__
+        if shell == 'ZMQInteractiveShell':
+            # Jupyter notebook or qtconsole
+            return True
+        elif shell == 'TerminalInteractiveShell':
+            # Terminal running IPython
+            return False
+        else:
+            # Other type (possibly unknown)
+            return False
+    except NameError:
+        # Probably standard Python interpreter
+        return False
+
 #################### Runs once on import ####################    
 
 # Declare the project root directory    
 project_root = declare_project_root()
+
+#if in_jupyter():
+#    print("Running in Jupyter Notebook/Lab")
+#else:
+#    print("Running in a terminal or non-IPython environment")
+
+
 #print(project_root, sys.path)
 import src.utils.constants as const
 
@@ -38,8 +62,7 @@ import time
 from src.Model2HDM.class_Model2HDM import Model2HDM
 from src.Model2HDM.methods_Model2HDM import * 
 from src.Model2HDM.ParameterSearch import * 
-from src.Model2HDM.constraints import * 
-from src.Model2HDM.potentials import *
+from src.Model2HDM.constraints_ParameterSearch import * 
 
 from src.Model2HDM.ModelDataCalculator import ModelDataCalculator
 

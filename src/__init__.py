@@ -2,7 +2,7 @@
 
 # Packges
 from .Model2HDM.class_Model2HDM import Model2HDM
-from .Model2HDM import ParameterSearch, methods_Model2HDM, constraints
+from .Model2HDM import ParameterSearch, constraints_ParameterSearch, methods_Model2HDM
 from .utils import methods_data, methods_general, methods_math
 from .MultiProcessing import class_MultiProcessing, methods_MultiProcessing
 

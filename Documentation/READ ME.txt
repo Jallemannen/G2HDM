@@ -68,6 +68,16 @@ following directory structure:
     VERSION HISTORY
 =====================================================
 
-1.0.0   2025-02-13
-First release of G2HDMC
+
+0.1.0   2025-02-19
+- Reworked methods, (now classes). Code has also been Optimized
+- Reworked Parameter search (now class). Also added post constraints.
+- Numerical Veff implemented
+- 3D Plots implemented
+- Added fermion masses into the effective potential
+- Improved the terminal program G2HDM.py
+- Added support for extra constraint eqs when solving for the counterterms.
+
+0.0.0   2025-02-13
+First Beta release of G2HDMC
 

@@ -524,10 +524,10 @@ def calculate_CW_potential_derivatives_numerical(M0_numerical, V0_fdep, fields, 
 
     ### Calculate mass eigenstates in terms of the fields
     fields_states_mass = sp.Matrix(R) * sp.Matrix(fields_mass)
-    fields_states = sp.Matrix(R).inv() * sp.Matrix(fields)
+    #fields_states = sp.Matrix(R).inv() * sp.Matrix(fields)
     fields_states_mass_subs = {f:fm for f,fm in zip(fields, fields_states_mass)}
     fields_mass_to_zero = {f:0 for f in fields_mass}
-    fields_to_zero = {f:0 for f in fields_states}
+    #fields_to_zero = {f:0 for f in fields_states}
     
     # Potential in terms of mass eigenstates
     V0_mass = V0_fdep.subs(fields_states_mass_subs).expand()
