@@ -1,13 +1,14 @@
 # Imports
 import os
 import sympy as sp  
+import symengine as se
 import numpy as np  
 import matplotlib.pyplot as plt  
 import time as time
 from IPython.display import display, Math  
 
 # Utils
-from numba import jit
+from numba import jit, njit
 from functools import lru_cache
 import psutil
 
@@ -147,10 +148,12 @@ class ModelDataCalculator:
     
     ########## Mass Data set calculators ##########
      
+    
     def calculate_massdata2D_level0(self, N, Xrange, free_bgfield, sorting=True):
         
         X = np.linspace(Xrange[0], Xrange[1], N)
-        Y = [0 for i in range(N)]
+        Y = np.zeros(N)
+        #Y = [0 for i in range(N)]
         
         for i,x in enumerate(X):
             M0_numerical = self.M0.subs({free_bgfield: x})
@@ -167,40 +170,56 @@ class ModelDataCalculator:
     def calculate_massdata2D_level1(self, N, Xrange, free_bgfield, sorting=True):
         import gc
         X = np.linspace(Xrange[0], Xrange[1], N)
-        Y = [0 for i in range(N)]
+        Y = np.zeros((N,8))
+        #Y = [0 for i in range(N)]
         
         # Precompile functions
-        self.assign_counterterm_values(self)
+        self.assign_counterterm_values()
         MCT_func = sp.lambdify(free_bgfield, self.MCT, "numpy")
         M0_func  = sp.lambdify(free_bgfield, self.M0, "numpy")
+        Meff = np.zeros((8, 8), dtype=np.float64)
         #gc.collect()
+        gc.disable()
         
         t0 = time.time()
         for i,x in enumerate(X):
             t_last = time.time()
             # Calculations
-            subs_bgfield_values = {free_bgfield: x}
-            CWcalculator = CWPotentialDerivativeCalculator(self, self.model, subs_bgfield_values)
-            MCW = CWcalculator.second_derivative()
+            #subs_bgfield_values = {free_bgfield: x}
+            #CWcalculator = CWPotentialDerivativeCalculator(self, self.model, subs_bgfield_values)
+            #tt0 = time.time()
+            MCW = self.VCW_second_derivative({free_bgfield: x}) #CWcalculator.second_derivative()
+            #tt1 = time.time()
+            #print("Time for MCW: ", tt1-tt0)
+            #del CWcalculator
             #MCT = self.MCT.subs(subs_bgfield_values).evalf()
             #M0 = self.M0.subs(subs_bgfield_values).evalf()
+            #M0 = np.array(M0_func(x)).astype(np.float64)
+            #MCT = np.array(MCT_func(x)).astype(np.float64)
             M0 = M0_func(x)
             MCT = MCT_func(x)
-            Meff = M0 + MCT + np.array(MCW).astype(np.float64)
+            np.add(M0, MCT, out=Meff)  # Meff = M0 + MCT
+            np.add(Meff, MCW, out=Meff)  # Meff += MCW
+            
+            #Meff = M0 + MCT + MCW
             masses, field_states, R = diagonalize_numerical_matrix(Meff, sorting=sorting)
-            masses_new = np.zeros(8)
+            #masses_new = np.zeros(8)
+            
+            #np.sqrt(np.abs(masses), out=Y[i])  # Directly modify Y
+            #Y[i] *= np.sign(masses)  # Apply sign directly
             for j, m in enumerate(masses):
-                masses_new[j] = np.sign(m)*np.sqrt(np.abs(m))
-            Y[i] = masses_new
+                Y[i,j] = np.sign(m)*np.sqrt(np.abs(m))
+                #Y[i,j] = masses_new
             
             # Print progress
             ti = time.time()
             t = ti-t0
             t_avg = t/(i+1)
             t_now = ti - t_last
-            print(f"| Progress: {i+1}/{N} at x={x:0.1f}={x/246:0.2f}v | Estimated time left: {sec_to_hms(t_avg*(N-i-1))} | Elapsed time: {sec_to_hms(t)} // {sec_to_hms(t_avg*N)} | Time for point: {t_now:0.1f}s , avg: {t_avg:0.1f}s | " , end="\r")
-            #if i % 10 == 0:
-            #    gc.collect()
+            print(f"| Progress: {i+1}/{N} at x={x:0.1f}={x/246:0.2f}v | Estimated time left: {sec_to_hms(t_avg*(N-i-1))} | Elapsed time: {sec_to_hms(t)} // {sec_to_hms(t_avg*N)} | Time per point: {t_avg:0.3f}s | " , end="\r")
+            #print("Progress: ", i+1, "/", N, " at x=", x, "=", x/246, "v | Estimated time left: ", sec_to_hms(t_avg*(N-i-1)), " | Elapsed time: ", sec_to_hms(t), " // ", sec_to_hms(t_avg*N), " | Time for point: ", t_now, "s , avg: ", t_avg, "s | " , end="\r")
+            if i % 10 == 0:
+                gc.collect()
             
         Y = np.transpose(Y)
         
@@ -297,19 +316,35 @@ class CWPotentialDerivativeCalculator:
         self.massStates_gauge = self.R_gauge @ model.massfields_gauge
         #self.massStates_fermions = sp.Matrix(self.R_fermions) * sp.Matrix(model.massfields_fermions)
 
-        # Potentials
+        # Potentials (This is a time sink)
         subs_massStates_higgs = {field:state for field,state in zip(model.fields, self.massStates_higgs)}
         subs_massStates_gauge = {field:state for field,state in zip(model.fields_gauge, self.massStates_gauge)}
-        self.V0 = MDC.V0_simplified.subs(subs_bgfield_values).evalf().subs(subs_massStates_higgs).expand()
-        self.L_kin = MDC.L_kin_simplified.subs(subs_bgfield_values).evalf().subs(subs_massStates_gauge).expand()
+        #self.V0 = MDC.V0_simplified.subs(subs_bgfield_values | subs_massStates_higgs).expand() #).evalf().subs(
+        #self.L_kin = MDC.L_kin_simplified.subs(subs_bgfield_values | subs_massStates_gauge).expand()
         #self.L_yuk = MDC.L_yuk_simplified.subs(subs_bgfield_values).evalf().subs({field:state for field,state in zip(model.massfields_fermions, self.massStates_fermions)})
+        #self.V0 = MDC.V0_simplified.xreplace(subs_bgfield_values | subs_massStates_higgs).expand() 
+        
+        
+        #self.V0 = MDC.V0_simplified.xreplace(subs_bgfield_values) # ca 0.2s
+        #self.V0 = custom_fast_expand_ultra(self.V0.xreplace(subs_massStates_higgs), model.massfields) # This takes the logest (ca 0.8-1s)
+        
+        #t0 = time.time()
+        V0_se = se.sympify(MDC.V0_simplified).xreplace(subs_bgfield_values) 
+        V0_se = V0_se.subs(subs_massStates_higgs).expand()
+        self.V0 = V0_se #sp.sympify(V0_se)
+        #self.V0 = V0_se
+        #print("Time for V0: ", time.time()-t0)
+        #display(self.V0)
+        #display(V0_se.as_coefficients_dict())
+        
+        self.L_kin = MDC.L_kin_simplified.xreplace(subs_bgfield_values | subs_massStates_gauge).expand()
 
         # Couplings
         self.L3_higgs = self.calculate_couplings3(self.V0, model.massfields, model.massfields)
         self.L3_gauge = self.calculate_couplings3(self.L_kin, model.fields_gauge, model.massfields)
         #self.L3_fermions = self.calculate_couplings3(self.L_yuk, model.fields_fermions, model.massfields)
         
-        self.L4_higgs = self.calculate_couplings4(self.V0, model.massfields, model.massfields)
+        self.L4_higgs = self.calculate_couplings4(self.V0, model.massfields, model.massfields) # ca 0.15s
         self.L4_gauge = self.calculate_couplings4(self.L_kin, model.fields_gauge, model.massfields)
         #self.L4_fermions = self.calculate_couplings4()
         
@@ -326,7 +361,7 @@ class CWPotentialDerivativeCalculator:
         NCW = NCW_higgs + NCW_gauge + NCW_fermions
         NCW = self.epsilon * self.R_higgs @ NCW # numpy matrix mul (j to i)  #sp.Matrix(NCW)
         NCW = np.where(np.abs(NCW) < self.threshold, 0, NCW)
-        return sp.Matrix(NCW) 
+        return NCW #sp.Matrix(NCW) 
     
     def second_derivative(self):
         MCW_higgs = self.Hij(L3=self.L3_higgs, L4=self.L4_higgs, masses=self.masses_higgs, kT=3/2, coeff=1/2)
@@ -337,7 +372,7 @@ class CWPotentialDerivativeCalculator:
         MCW = np.where(np.abs(MCW) < self.threshold, 0, MCW)
         
 
-        return sp.Matrix(MCW)
+        return MCW #sp.Matrix(MCW)
         
     ####### Helper functions #######
 
@@ -410,13 +445,17 @@ class CWPotentialDerivativeCalculator:
     def calculate_couplings3(self, V, fields1, fields2):
         n1 = len(fields1)
         n2 = len(fields2)
+        fields1 = [se.sympify(f) for f in fields1]
+        fields2 = [se.sympify(f) for f in fields2]
         #L3 = np.empty((n1, n1, n2), dtype=object)
         L3 = np.zeros((n1, n1, n2), dtype=np.float64)
         fields_to_zero = {f: 0 for f in (fields1 + fields2)}
         # A cache to avoid recomputing the same fieldterm.
         cache = {}
         # Create a Poly object over all the fields.
-        polyV = sp.Poly(V, list(set(fields1 + fields2)))
+        ##polyV = V.as_poly() #sp.Poly(V, list(set(fields1 + fields2)))
+        coeff_dict = V.as_coefficients_dict()
+        
         
         # Loop only over i <= j assuming symmetry in the first two indices.
         for i in range(n1):
@@ -426,9 +465,10 @@ class CWPotentialDerivativeCalculator:
                     fieldterm = prod1 * fields2[k]
                     if fieldterm not in cache:
                         # Expand and substitute only once per unique fieldterm.
-                        #term = V.coeff(fieldterm).subs(fields_to_zero) #Costly part
-                        coeff = polyV.coeff_monomial(fieldterm)
-                        term = coeff.subs(fields_to_zero)
+                        ##term = V.coeff(fieldterm).subs(fields_to_zero) #Costly part
+                        ##coeff = polyV.coeff_monomial(fieldterm)
+                        ##term = coeff.subs(fields_to_zero)
+                        term = coeff_dict.get(fieldterm, 0)
                         cache[fieldterm] = np.float64(term) #sp.re(term)
                     value = cache[fieldterm]
                     L3[i, j, k] = value
@@ -442,13 +482,16 @@ class CWPotentialDerivativeCalculator:
     def calculate_couplings4(self, V, fields1, fields2):
         n1 = len(fields1)
         n2 = len(fields2)
+        fields1 = [se.sympify(f) for f in fields1]
+        fields2 = [se.sympify(f) for f in fields2]
         #L4 = np.empty((n1, n1, n2, n2), dtype=object)
         L4 = np.zeros((n1, n1, n2, n2), dtype=np.float64)
         fields_to_zero = {f: 0 for f in (fields1 + fields2)}
         # A cache to avoid recomputing the same fieldterm.
         cache = {}
         # Create a Poly object over all the fields.
-        polyV = sp.Poly(V, list(set(fields1 + fields2)))
+        ##polyV = V.as_poly() #sp.Poly(V, list(set(fields1 + fields2)))
+        coeff_dict = V.as_coefficients_dict()
         
         # Loop over indices in the first group assuming symmetry: i <= j.
         for i in range(n1):
@@ -459,9 +502,10 @@ class CWPotentialDerivativeCalculator:
                     for l in range(k, n2):
                         fieldterm = prod1 * fields2[k] * fields2[l]
                         if fieldterm not in cache:
-                            #term = V.coeff(fieldterm).subs(fields_to_zero) #Costly part
-                            coeff = polyV.coeff_monomial(fieldterm)
-                            term = coeff.subs(fields_to_zero)
+                            ##term = V.coeff(fieldterm).subs(fields_to_zero) #Costly part
+                            ##coeff = polyV.coeff_monomial(fieldterm)
+                            ##term = coeff.subs(fields_to_zero)
+                            term = coeff_dict.get(fieldterm, 0)
                             cache[fieldterm] = np.float64(term)
                         value = cache[fieldterm]
                         L4[i, j, k, l] = value
@@ -659,3 +703,132 @@ class CWPotentialDerivativeCalculator:
 # Class for calculating the Branching ratios
 class BranchingRatios:
     pass
+
+
+############# Helper functions #############
+
+
+####################################################
+def poly_to_dict(expr, gens):
+    """
+    Convert a polynomial expression in generators `gens` into a dictionary.
+    Each key is a tuple of exponents (in the order of gens) and the value is the coefficient.
+    """
+    # Base case: if expr is an addition, process each term.
+    if expr.is_Add:
+        poly_dict = {}
+        for term in expr.args:
+            term_dict = poly_to_dict(term, gens)
+            for mono, coeff in term_dict.items():
+                poly_dict[mono] = poly_dict.get(mono, 0) + coeff
+        return poly_dict
+    # Multiplication: multiply the dictionary representations.
+    elif expr.is_Mul:
+        poly_dict = {tuple([0]*len(gens)): 1}  # represents the constant 1
+        for factor in expr.args:
+            factor_dict = poly_to_dict(factor, gens)
+            poly_dict = multiply_poly_dict(poly_dict, factor_dict)
+        return poly_dict
+    # Power: handle integer exponents.
+    elif expr.is_Pow and expr.exp.is_Integer and expr.exp >= 0:
+        base_dict = poly_to_dict(expr.base, gens)
+        return poly_pow_dict(base_dict, int(expr.exp), len(gens))
+    else:
+        # If expr is one of the generators, represent it with exponent 1.
+        if expr in gens:
+            mono = [0] * len(gens)
+            mono[gens.index(expr)] = 1
+            return {tuple(mono): 1}
+        # Otherwise, assume it's a numeric constant.
+        return {tuple([0]*len(gens)): expr}
+
+def multiply_poly_dict(p1, p2):
+    """
+    Multiply two polynomials represented as dictionaries.
+    """
+    result = {}
+    for m1, c1 in p1.items():
+        for m2, c2 in p2.items():
+            # Sum the exponents elementwise.
+            m = tuple(a + b for a, b in zip(m1, m2))
+            result[m] = result.get(m, 0) + c1 * c2
+    return result
+
+def poly_pow_dict(poly, n, num_gens):
+    """
+    Raise a polynomial (in dict form) to the power n.
+    """
+    result = {tuple([0]*num_gens): 1}  # 1
+    for _ in range(n):
+        result = multiply_poly_dict(result, poly)
+    return result
+
+def dict_to_expr(poly_dict, gens):
+    """
+    Convert a dictionary representation back into a Sympy expression.
+    """
+    expr = 0
+    for mono, coeff in poly_dict.items():
+        term = coeff
+        for g, exp in zip(gens, mono):
+            if exp:
+                term *= g**exp
+        expr += term
+    return expr
+
+def custom_fast_expand_ultra(expr, gens):
+    """
+    Fully expand a polynomial expression by converting it to a dictionary and back.
+    Assumes the expression is a polynomial in the given generators.
+    """
+    poly_dict = poly_to_dict(expr, gens)
+    return dict_to_expr(poly_dict, gens)
+
+
+##############################################################################
+def custom_fast_expand(expr):
+    """
+    Recursively expand a polynomial expression by distributing products.
+    Assumes that powers are nonnegative integers.
+    """
+    # Base case: if the expression is atomic, return it.
+    if expr.is_Atom:
+        return expr
+
+    # If it's an addition, recursively expand each term.
+    if expr.is_Add:
+        return sp.Add(*[custom_fast_expand(arg) for arg in expr.args])
+    
+    # If it's a multiplication, recursively expand each factor
+    # then distribute pairwise.
+    if expr.is_Mul:
+        # First, expand each factor
+        factors = [custom_fast_expand(arg) for arg in expr.args]
+        result = factors[0]
+        for factor in factors[1:]:
+            result = distribute(result, factor)
+        return result
+    
+    # If it's a power with an integer exponent, use repeated multiplication.
+    if expr.is_Pow and expr.exp.is_Integer and expr.exp >= 0:
+        base = custom_fast_expand(expr.base)
+        n = int(expr.exp)
+        if n == 0:
+            return sp.Integer(1)
+        result = base
+        for _ in range(1, n):
+            result = distribute(result, base)
+        return result
+
+    # Otherwise, process the arguments and reassemble.
+    return expr.func(*[custom_fast_expand(arg) for arg in expr.args])
+
+def distribute(expr1, expr2):
+    """
+    Distribute multiplication over addition for two expanded expressions.
+    Assumes expr1 and expr2 are already expanded (or atomic).
+    """
+    # If an expression is not an Add, treat it as a single term.
+    terms1 = expr1.args if expr1.is_Add else [expr1]
+    terms2 = expr2.args if expr2.is_Add else [expr2]
+    return sp.Add(*[t1 * t2 for t1 in terms1 for t2 in terms2])

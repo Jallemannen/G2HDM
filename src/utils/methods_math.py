@@ -4,6 +4,7 @@
 import sympy as sp  
 import numpy as np  
 from IPython.display import display, Math
+from numba import jit, njit
 
 from sympy.physics.quantum.dagger import Dagger   
 
@@ -110,6 +111,19 @@ def diagonalize_numerical_matrix(matrix, sorting=False):
     if matrix.shape[0] != matrix.shape[1]:
         raise ValueError("Matrix must be square.")
 
+    
+    
+    return func(matrix, threshold, sorting)
+    
+#@njit(parallel=True, cache=True)
+def block(R_top, R_bottom, n):
+    R = np.zeros((2 * n, 2 * n))
+    R[:n, :n] = R_top
+    R[n:, n:] = R_bottom
+    return R
+
+#@njit(cache=True)
+def func(matrix, threshold, sorting):
     N = matrix.shape[0]
     block_diagonal = False
 
@@ -141,8 +155,9 @@ def diagonalize_numerical_matrix(matrix, sorting=False):
 
         eigenvalues = np.concatenate((eigenvalues_top, eigenvalues_bottom))
         # Build block-diagonal eigenvector matrix.
-        R = np.block([[R_top, np.zeros((n, n))],
-                      [np.zeros((n, n)), R_bottom]])
+        R = block(R_top, R_bottom, n)
+        #R = np.block([[R_top, np.zeros((n, n))],
+        #            [np.zeros((n, n)), R_bottom]])
     else:
         # For a general symmetric matrix, np.linalg.eigh returns sorted eigenvalues.
         eigenvalues, R = np.linalg.eigh(matrix)
@@ -155,9 +170,6 @@ def diagonalize_numerical_matrix(matrix, sorting=False):
     eigenvectors = R
 
     return eigenvalues, eigenvectors, R
-    
-    
-    
     
     
     
