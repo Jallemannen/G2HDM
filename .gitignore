@@ -11,6 +11,11 @@ dist/
 
 # Virtual environment directories (if named venv, env, etc.)
 .venv/
+env/
+venv/
+
+# Models
+Models/
 
 # Installer logs
 pip-log.txt
