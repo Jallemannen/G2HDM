@@ -10,6 +10,7 @@ dist/
 *.egg-info/
 
 # Virtual environment directories (if named venv, env, etc.)
+.venv
 .venv/
 env/
 venv/
