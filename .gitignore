@@ -39,8 +39,12 @@ htmlcov/
 .cache
 
 # Jupyter Notebook checkpoints
+ipynb_checkpoints/
 .ipynb_checkpoints/
 .vscode/
 
 # VS Code specific settings
 .vscode/
+
+#
+.gitignore
