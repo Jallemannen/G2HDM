@@ -25,9 +25,9 @@ from ..utils import constants as const
 def load_model(name:str, path:str=None, project_root = None):
     """Need to be in Saved folder. Returns the loaded model, given its folder, if it exists, else it returns None"""
     if project_root is None:
-        project_root = os.path.abspath(os.path.join(os.getcwd(), '..'))
+        project_root = os.path.abspath(os.path.join(os.getcwd(), ''))
     if path == None:
-        path = os.path.join(project_root, "Models", "Saved_models", f"{name}", "model_data", "model.pkl")
+        path = os.path.join(project_root, "saved_models", f"{name}", "model_data", "model.pkl")
 
     return load_pkl(path)    
 
