@@ -3,6 +3,12 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Compiled files
+*.so
+*.dll
+*.dylib
+*.pyd
+
 # Distribution / packaging
 build/
 dist/
@@ -34,6 +40,7 @@ htmlcov/
 
 # Jupyter Notebook checkpoints
 .ipynb_checkpoints/
+.vscode/
 
 # VS Code specific settings
 .vscode/
