@@ -48,6 +48,7 @@ class ModelDataCalculator:
         #self.fields_to_zero = {f: 0 for f in model.fields} | {f: 0 for f in model.fields_gauge}
         #self.subs_VEV_values = {symb:val for symb,val in zip(model.VEVs, VEV_values)}
         self.subs_bgfields_to_VEV = {symb:val for symb,val in zip(model.bgfields, model.VEVs)}
+        self.subs_bgfields_to_VEV_values = {symb:val for symb,val in zip(model.bgfields, subs_VEV_values.values())}
         self.subs_fields_to_zero = {field:0 for field in model.fields}
         #self.subs_V0_params_values = {param:value for param, value in zip(model.V0_params, V0_params_values)}
         
@@ -62,7 +63,8 @@ class ModelDataCalculator:
         self.L_yuk_simplified = generate_yukawa_term_fermions(model).subs(self.subs_V0_params_values | self.subs_VEV_values | self.subs_constants).evalf()
         
         # Precompute expressions
-        self.M0 = sp.hessian(self.V0_simplified, model.fields).subs(self.subs_fields_to_zero)
+        #sp.hessian(self.V0_simplified, model.fields).subs(self.subs_fields_to_zero)
+        self.M0 = model.getdata("M0").subs(self.subs_V0_params_values | self.subs_VEV_values).evalf()
         self.M_kin = sp.hessian(self.L_kin_simplified, model.fields_gauge).subs(self.subs_fields_to_zero) #.subs(self.subs_constants).evalf()
         self.M_yuk = None
 
@@ -80,7 +82,9 @@ class ModelDataCalculator:
 
     ########## Numerical Solutions ##########
     
-    def calculate_masses_higgs(self, subs_bgfield_values):
+    def calculate_masses_higgs(self, subs_bgfield_values=None):
+        if subs_bgfield_values is None:
+            subs_bgfield_values = self.subs_bgfields_to_VEV_values
         M_numerical = self.M0.subs(subs_bgfield_values).evalf()
         masses, states, R = diagonalize_numerical_matrix(M_numerical, sorting=True)
         return masses, R
@@ -94,6 +98,73 @@ class ModelDataCalculator:
         pass  
     
     ########## Numerical Solutions ##########
+    
+    
+
+    def calculate_VCW_point(self, subs_bgfield_values, only_top=True):
+        
+        
+        # Constants
+        v = const.v
+        mu = v
+        
+        # Coleman weinberg potential function
+        def V_CW(mass, dof, C):
+
+            mass_squared = mass
+            # Handle zero and negative masses
+            if mass_squared < 1e-5: #.is_zero:
+                log_term = 0
+            else:
+                #log_term = sp.sign(mass_squared)*sp.log(sp.Abs(mass_squared) / mu**2)
+                log_term = sp.log(mass_squared / mu**2)
+
+            factor = dof / (64 * sp.pi**2)
+
+            # Add this particle's contribution to the effective potential
+            return factor * mass_squared**2 * (log_term - C)
+        
+        
+        masses_higgs, _ = self.calculate_masses_higgs(subs_bgfield_values)
+        masses_gauge, _ = self.calculate_masses_gauge(subs_bgfield_values)
+        #masses_fermions = mdc.calculate_masses_fermions(subs_bgfield_values)
+        
+        # mass eigenvalues
+        masses = list(np.concatenate((masses_higgs,masses_gauge))) #+ masses_fermions
+        
+        # Spins
+        spins_higgs = [0 for _ in masses_higgs]
+        spins_gauge = [1 for _ in masses_gauge]
+        #spins_fermions = [1/2 for _ in masses_fermions]
+
+        # Dof
+        dofs_higgs = [1 for _ in masses_higgs] 
+        dofs_gauge = []
+
+        for mass in masses_gauge:
+            if mass==0:
+                dofs_gauge.append(2)
+            else:
+                dofs_gauge.append(3)
+                
+        dofs_fermions = [12]
+        
+        # Scheme constants
+        scheme_constants_higgs = [3/2 for _ in masses_higgs]
+        scheme_constants_gauge = [3/2 for _ in masses_gauge]
+        #scheme_constants_fermions = [5/6 for _ in masses_fermions]
+
+        # Generate the potential
+        #Masses = masses_higgs + masses_gauge #+ masses_fermions
+        Dofs = dofs_higgs + dofs_gauge #+ dofs_fermions
+        Scheme_constants = scheme_constants_higgs + scheme_constants_gauge #+ scheme_constants_fermions
+        V_cw_expr = 0
+        
+        for masses, dofs, scheme_constants in zip(masses, Dofs, Scheme_constants):
+            V_cw_expr += V_CW(masses, dofs, scheme_constants)
+        
+        return V_cw_expr
+    
     
     # Calculate and assign the VCT parameter values
     def counterterm_values(self):
@@ -152,17 +223,25 @@ class ModelDataCalculator:
     def calculate_massdata2D_level0(self, N, Xrange, free_bgfield, sorting=True):
         
         X = np.linspace(Xrange[0], Xrange[1], N)
-        Y = np.zeros(N)
+        Y = np.zeros((N,8))
         #Y = [0 for i in range(N)]
+        
+        #Test
+        #M0_numerical = self.M0.subs({free_bgfield: 246})
+        #M0_numerical = np.array(M0_numerical).astype(np.float64)
+        #masses, field_states, R = diagonalize_numerical_matrix(M0_numerical, sorting=sorting)   
+        #display(self.M0, sp.Matrix(M0_numerical))
+        #display(masses)
+        
         
         for i,x in enumerate(X):
             M0_numerical = self.M0.subs({free_bgfield: x})
             M0_numerical = np.array(M0_numerical).astype(np.float64)
             masses, field_states, R = diagonalize_numerical_matrix(M0_numerical, sorting=sorting)   
-            masses_new = np.zeros(8)
+            #masses_new = np.zeros(8)
             for j, m in enumerate(masses):
-                masses_new[j] = np.sign(m)*np.sqrt(np.abs(m))
-            Y[i] = masses_new
+                Y[i,j] = np.sign(m)*np.sqrt(np.abs(m))
+            #Y[i] = masses_new
         Y = np.transpose(Y)
 
         return X, Y   
@@ -240,10 +319,10 @@ class ModelDataCalculator:
     def calculate_Vdata2D_level0(self, N, free_bgfield, Xrange):
         
         X = np.linspace(Xrange[0], Xrange[1], N)
-        Y = [0 for i in range(N)]
+        Y = np.zeros(N)
         
         for i,x in enumerate(X):
-            V0_numerical = self.V0_simplified.subs({free_bgfield: x})
+            V0_numerical = self.V0_simplified.subs({free_bgfield: x}).subs(self.subs_fields_to_zero).evalf()
             Y[i] = V0_numerical
         
         return X, Y
@@ -268,8 +347,21 @@ class ModelDataCalculator:
                 
         return X, Y, Z
     
-    def calculate_Vdata2D_level1(self, model):
-        pass
+    def calculate_Vdata2D_level1(self, N, free_bgfield, Xrange):
+        
+        X = np.linspace(Xrange[0], Xrange[1], N)
+        Y = np.zeros(N)
+        
+        self.assign_counterterm_values()
+        
+        for i,x in enumerate(X):
+            print(f"Progress {i+1}/{N} at x=", x, end="\r")
+            V0_point = self.V0_simplified.subs({free_bgfield: x}).subs(self.subs_fields_to_zero).evalf()
+            Vcw_point = self.calculate_VCW_point({free_bgfield: x}, only_top=True)
+            Vct_point = self.VCT_simplified.subs({free_bgfield: x}).subs(self.subs_VCT_params_values).subs(self.subs_fields_to_zero).evalf()
+            Y[i] = V0_point + Vcw_point + Vct_point
+        
+        return X, Y
     
     def calculate_Vdata3D_level1(self, model):
         pass
@@ -412,7 +504,7 @@ class CWPotentialDerivativeCalculator:
         # calc
         log1 = 0
         log2 = 0
-        if m1sq == 0 and m2sq == 0:
+        """if m1sq == 0 and m2sq == 0:
             return 1
         if np.abs(m1sq-m2sq)<1e-5:
             return 1
@@ -424,9 +516,15 @@ class CWPotentialDerivativeCalculator:
             return 1 + log1
             
         return (m1sq*log1 - m2sq*log2)/(m1sq-m2sq)
-
-            
-        """if sp.Abs(m1sq-m2sq)>1e-5: # add threshold
+        """
+        
+        if m1sq == 0 and m2sq == 0:
+            return 1
+        if m1sq != 0:
+            log1 = sign1*sp.log(m1sq_R/mu**2)
+            log2 = 0
+        
+        if sp.Abs(m1sq-m2sq)>1e-5: # add threshold
             log2 = 0  
             if m2sq != 0:
                 log2 = sign2*sp.log(m2sq_R/mu**2)
@@ -438,7 +536,7 @@ class CWPotentialDerivativeCalculator:
                 #print(log1, m2sq/m1sq, (m1sq*sp.Abs(log1) - m2sq*sp.Abs(log2))/(m1sq-m2sq))
                 return (m1sq*sp.Abs(log1) - m2sq*sp.Abs(log2))/(m1sq-m2sq) #log1/(1-m2sq/m1sq)
         else: 
-            return 1 + log1"""
+            return 1 + log1
     
     # Calculate trilinear couplings (Optimized)
     #@jit
@@ -703,6 +801,87 @@ class CWPotentialDerivativeCalculator:
 # Class for calculating the Branching ratios
 class BranchingRatios:
     pass
+
+
+
+
+
+def generate_VCW(model, only_top=True):
+    
+    
+    # Constants
+    v = const.v
+    mu = v
+    
+    # Coleman weinberg potential function
+    def V_CW(mass, dof, C):
+
+        mass_squared = mass
+        display(mass_squared)
+        # Handle zero and negative masses
+        if mass_squared.is_zero:
+            log_term = 0
+        else:
+            #log_term = sp.sign(mass_squared)*sp.log(sp.Abs(mass_squared) / mu**2)
+            log_term = sp.log(mass_squared / mu**2)
+
+        factor = dof / (64 * sp.pi**2)
+
+        # Add this particle's contribution to the effective potential
+        return factor * mass_squared**2 * (log_term - C)
+    
+    
+    #
+    #masses_gauge, _ = generate_masses_gaugebosons(model)
+    #masses_fermions, _ = generate_masses_fermions(model, type="I", only_top=only_top)
+    
+    
+    #display(masses_gauge, masses_fermions)
+    
+    
+    
+    # Unpacking
+    #masses_higgs = model.DATA["M0_eigenvalues"]
+    
+    masses_higgs = mdc.calculate_masses_higgs(subs_bgfield_values)
+    masses_gauge = mdc.calculate_masses_gauge(subs_bgfield_values)
+    #masses_fermions = mdc.calculate_masses_fermions(subs_bgfield_values)
+    
+    # mass eigenvalues
+    masses = masses_higgs + masses_gauge + masses_fermions
+    
+    # Spins
+    spins_higgs = [0 for _ in masses_higgs]
+    spins_gauge = [1 for _ in masses_gauge]
+    #spins_fermions = [1/2 for _ in masses_fermions]
+
+    # Dof
+    dofs_higgs = [1 for _ in masses_higgs] 
+    dofs_gauge = []
+    for mass in masses_gauge:
+        if mass.is_zero:
+            dofs_gauge.append(2)
+        else:
+            dofs_gauge.append(3)
+            
+    dofs_fermions = [12]
+    
+    # Scheme constants
+    scheme_constants_higgs = [3/2 for _ in masses_higgs]
+    scheme_constants_gauge = [3/2 for _ in masses_gauge]
+    #scheme_constants_fermions = [5/6 for _ in masses_fermions]
+
+    # Generate the potential
+    Masses = masses_higgs + masses_gauge #+ masses_fermions
+    Dofs = dofs_higgs + dofs_gauge #+ dofs_fermions
+    Scheme_constants = scheme_constants_higgs + scheme_constants_gauge #+ scheme_constants_fermions
+    V_cw_expr = 0
+    
+    for masses, dofs, scheme_constants in zip(Masses, Dofs, Scheme_constants):
+        V_cw_expr += V_CW(masses, dofs, scheme_constants)
+    
+    return V_cw_expr
+
 
 
 ############# Helper functions #############

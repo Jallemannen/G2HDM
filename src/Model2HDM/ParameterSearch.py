@@ -73,8 +73,21 @@ class ParamSearch:
     def add_point(self, point):
         pass
     
-    def get_point(self, index, output:str="all"):
-        pass
+    def get_point(self, index, output:str="all", filename:str=None):
+        if filename == None:
+            filename = self.name
+        data = load_data(filename, path=self.path_data)
+        point = [data[key][index] for key in data.keys()]
+        if output == "all":
+            return point
+        elif output == "V0_params":
+            return point[self.V0_params_indexrange[0]:self.V0_params_indexrange[1]]
+        elif output == "VCT_params":
+            return point[self.VCT_params_indexrange[0]:self.VCT_params_indexrange[1]]
+        elif output == "masses":
+            return point[-8:] #[self.masses_indexrange[0]:self.masses_indexrange[1]]
+        else:
+            raise Exception("Invalid output. Choose 'all', 'V0_params', 'VCT_params' or 'masses'")
     
     def number_of_points(self, filename:str=None):
         if filename == None:
@@ -188,7 +201,7 @@ class ParamSearch:
             "subs_VEV_values":self.subs_VEV_values
         }
         
-        results = multiprocessing(iterator_ps, kwargs, 
+        results = multiprocessing(iterator_symbolic_ps, kwargs, 
                               processes=N_processes, max_runtime=runtime, max_iterations=iterations)
     
         results_final = self.unpack_data_multiprocessing(results)
@@ -198,7 +211,8 @@ class ParamSearch:
         save_data(results_final, filename=self.name, path=self.path_data, merge=merge, show_size=True)
         
     
-    def ps (self):
+    def ps(self):
+        """unsorted_masses"""
         pass
         
     
@@ -208,8 +222,64 @@ class ParamSearch:
 
 #################### Iterators ####################
 
-
 def iterator_ps(kwargs):
+    # unpacking
+    model = kwargs["model"]
+    param_ranges = kwargs["param_ranges"]
+    params = kwargs["params"]
+    params_free = kwargs["params_free"]
+    subs_VEV_values = kwargs["subs_VEV_values"]
+    
+    #print("test")
+    # Choose random values for the free parameters within the ranges
+    params_free_values = [0 for _ in range(len(param_ranges))]
+    for i, param_range in enumerate(param_ranges):
+        if isinstance(param_range, (int,float)):
+            params_free_values[i] = param_range
+        else:
+            params_free_values[i] = random.uniform(param_range[0], param_range[1])
+    
+    # Subs
+    subs_params = {symb:val for symb, val in zip(params_free, params_free_values)}
+    
+    # params (V0 + VEV)
+    params_values = [0 for _ in range(len(params))] #[param.subs(subs_params) for param in params]
+    for i, param in enumerate(params):
+        if isinstance(param, (int,float)):
+            params_values[i] = param
+        else:
+            params_values[i] = param.subs(subs_params)
+    
+    # VCT params
+    subs_V0_params_values = {symb:val for symb,val in zip(model.V0_params, params_values[0:14])}
+    
+    MDC = ModelDataCalculator(model, subs_V0_params_values, subs_VEV_values)
+    VCT_params_values = MDC.counterterm_values()
+        
+    # Effective masses at vev
+    masses,_ = MDC.calculate_masses_higgs()
+    #display(masses)
+    masses_values = [0 for m in range(len(masses))]
+    for i, m in enumerate(masses):
+        if m < 0:
+            sign = -1
+        else:
+            sign = 1
+        masses_values[i] = sign*sp.sqrt(sp.Abs(m))
+    
+    #display(masses_values)
+    
+    # postive masses constraint
+    if not all([m >= 0 for m in masses_values]):
+        return None
+    
+    # Return result
+    result = [params_values, VCT_params_values, masses_values] 
+    
+    return result
+
+
+def iterator_symbolic_ps(kwargs):
     
     # unpacking
     model = kwargs["model"]
@@ -250,7 +320,11 @@ def iterator_ps(kwargs):
         m = m.subs(subs_params).evalf()
         if sp.Abs(sp.im(m)) < threshold*sp.Abs(sp.re(m)):
             m = sp.re(m)
-        masses_values[i] = sp.sign(m)*sp.sqrt(sp.Abs(m))
+        if m < 0 or m.is_negative:
+            sign = -1
+        else:
+            sign = 1
+        masses_values[i] = sign*sp.sqrt(sp.Abs(m))
     
     if not all([m >= 0 for m in masses_values]):
         return None

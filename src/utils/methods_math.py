@@ -155,9 +155,9 @@ def func(matrix, threshold, sorting):
 
         eigenvalues = np.concatenate((eigenvalues_top, eigenvalues_bottom))
         # Build block-diagonal eigenvector matrix.
-        R = block(R_top, R_bottom, n)
-        #R = np.block([[R_top, np.zeros((n, n))],
-        #            [np.zeros((n, n)), R_bottom]])
+        #R = block(R_top, R_bottom, n)
+        R = np.block([[R_top, np.zeros((n, n))],
+                    [np.zeros((n, n)), R_bottom]])
     else:
         # For a general symmetric matrix, np.linalg.eigh returns sorted eigenvalues.
         eigenvalues, R = np.linalg.eigh(matrix)
