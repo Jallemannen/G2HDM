@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "myproject"
+version = "0.1.0"
+description = "My project"
+authors = [{name = "Me", email = "email"}]
+license = {text="MIT"}
+readme = "README.md"
+github = "link"
+requires-python = ">=3.7"
+dependencies = [
+    "numpy",
+    "pandas",
+    "sympy",
+    "symengine",
+    "matplotlib"
+]
+
+
+[tool.setuptools.packages.find]
+where = ["src"]
