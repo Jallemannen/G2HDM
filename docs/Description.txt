@@ -1,0 +1,30 @@
+
+G2HDM
+
+Three main classes:
+1. Model2HDM
+2. ModelDataCalculator (ModelCalculator)
+3. ParamSearch (ParameterSearch)
+
+
+============================
+1. Model2HDM
+============================
+* Class for storing all the algebraic data.
+* Also contains solvers for analytical syolutions
+
+
+============================
+2. ModelCalculator
+============================
+* Main Class for generating numerical solution from a model 
+given numerical parameters.
+
+
+
+
+============================
+3. ParameterSearch
+============================
+* Class for generating sets of numerical parameter sets (eg points).
+* Also has methods for applying constraints and sorting datasets (eg positivity). 

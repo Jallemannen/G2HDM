@@ -86,7 +86,6 @@ class Model2HDM:
             assert len(self.massfields) == 8, "The number of massfields must be 8."
         else:
             model_data["massfields"] = [self.SYMBOLS["h1"], self.SYMBOLS["h2"], self.SYMBOLS["h3"], self.SYMBOLS["h4"], self.SYMBOLS["h5"], self.SYMBOLS["h6"], self.SYMBOLS["h7"], self.SYMBOLS["h8"]]
-        
         if "field1_matrixsymbol" in model_data:
             self.field1_matrixsymbol = model_data["field1_matrixsymbol"]
         else:

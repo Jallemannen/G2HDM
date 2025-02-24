@@ -6,6 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt  
 import time as time
 from IPython.display import display, Math  
+import warnings
 
 # Utils
 from numba import jit, njit
@@ -13,7 +14,7 @@ from functools import lru_cache
 import psutil
 
 # Custom imports
-from ..Model2HDM.class_Model2HDM import Model2HDM
+from ..Model2HDM.Model2HDM import Model2HDM
 from ..Model2HDM.methods_Model2HDM import *
 
 # Utils
@@ -25,24 +26,47 @@ from ..utils import constants as const
 ####################################################################################
 
 # Main/parent class
-class ModelDataCalculator:
+class Model2HDMCalculator:
     """
     Generates numerical solutions for a given set of parameters and VEVs, which depends on omega.
         
     * Does not modify the model itself, thus multiple calculators can be created for different parameter sets.
     """
-    def __init__(self, model:Model2HDM, subs_V0_params_values:dict, subs_VEV_values:dict, subs_bgfield_values:dict={}):
+    def __init__(self, model:Model2HDM, 
+                 subs_V0_params_values:dict=None, 
+                 subs_VEV_values:dict=None, 
+                 V0_params_values:list=None,
+                 VEV_values:list=None):
         
+        self.is_renormalized = None
         self.model = model
         assert model.getdata("VCT_params_solution") is not None, "The analytical counterterm solutions has not been solved yet"
         
-        # Constants
-        self.mu = 246
+        # Numerical values for parameters
+        if V0_params_values is None and subs_V0_params_values is None:
+            raise ValueError("No values for V0 parameters has been assigned")
+        elif V0_params_values is not None and subs_V0_params_values is not None:
+            raise ValueError("Both list and dict values for V0 parameters has been assigned")
+        elif V0_params_values is not None:
+            subs_V0_params_values = {param:value for param, value in zip(model.V0_params, V0_params_values)}
+            self.subs_V0_params_values = subs_V0_params_values
+        elif subs_V0_params_values is not None:
+            self.subs_V0_params_values = subs_V0_params_values
+            
+        # Numerical values for VEVs
+        if VEV_values is None and subs_VEV_values is None:
+            raise ValueError("No values for VEVs has been assigned")
+        elif VEV_values is not None and subs_VEV_values is not None:
+            raise ValueError("Both list and dict values for VEVs has been assigned")
+        elif VEV_values is not None:
+            subs_VEV_values = {symb:val for symb,val in zip(model.VEVs, VEV_values)}
+            self.subs_VEV_values = subs_VEV_values
+        elif subs_VEV_values is not None:
+            self.subs_VEV_values = subs_VEV_values
         
-        # Numerical values
-        self.subs_VEV_values = subs_VEV_values
-        self.subs_bgfield_values = subs_bgfield_values #Default values
-        self.subs_V0_params_values = subs_V0_params_values
+        #self.subs_VEV_values = subs_VEV_values
+        #self.subs_bgfield_values = subs_VEV_values #Default values for unassigned bgfields
+        #self.subs_V0_params_values = subs_V0_params_values # add support for both dict and list
         
         # Precompute common substitutions and expressions.
         #self.fields_to_zero = {f: 0 for f in model.fields} | {f: 0 for f in model.fields_gauge}
@@ -53,14 +77,17 @@ class ModelDataCalculator:
         #self.subs_V0_params_values = {param:value for param, value in zip(model.V0_params, V0_params_values)}
         
         # Gauge subs
-        g1 = sp.Symbol("g_1", real=True)
-        g2 = sp.Symbol("g_2", real=True)
-        self.subs_constants = {g1:const.g1, g2:const.g2}
+        g1 = model.symbol("g1")
+        g2 = model.symbol("g2")
+        self.subs_constants_gauge = {g1:const.g1, g2:const.g2}
+
+        # quark subs
+        #yt = model.symbol("yt")
 
         # Simplified solutions
         self.V0_simplified = model.V0.subs(self.subs_V0_params_values | self.subs_VEV_values).evalf()
-        self.L_kin_simplified = generate_kinetic_term_gauge(model).subs(self.subs_V0_params_values | self.subs_VEV_values | self.subs_constants).evalf()
-        self.L_yuk_simplified = generate_yukawa_term_fermions(model).subs(self.subs_V0_params_values | self.subs_VEV_values | self.subs_constants).evalf()
+        self.L_kin_simplified = generate_kinetic_term_gauge(model).subs(self.subs_V0_params_values | self.subs_VEV_values | self.subs_constants_gauge).evalf()
+        self.L_yuk_simplified = generate_yukawa_term_fermions(model).subs(self.subs_V0_params_values | self.subs_VEV_values | self.subs_constants_gauge).evalf()
         
         # Precompute expressions
         #sp.hessian(self.V0_simplified, model.fields).subs(self.subs_fields_to_zero)
@@ -72,25 +99,51 @@ class ModelDataCalculator:
         self.MCT = None
 
 
-    def assign_counterterm_values(self):
+    def assign_counterterm_values(self, raise_warning=True):
         # Calculate the VCT values
         VCT_params_values = self.counterterm_values()
+        self.VCT_params_values = VCT_params_values
         self.subs_VCT_params_values = {param:value for param, value in zip(self.model.VCT_params, VCT_params_values)}
         self.VCT_simplified = self.model.VCT.subs(self.subs_VCT_params_values | self.subs_V0_params_values | self.subs_VEV_values).evalf()
         self.MCT = sp.hessian(self.VCT_simplified, self.model.fields).subs(self.subs_fields_to_zero)
 
+        # Also make a check if the model is renormalized
+        if self.is_renormalized is None:
+            self.check_renormalization()
+        if not self.is_renormalized and raise_warning:
+            warnings.warn("The model is not renormalized", UserWarning)
+
+    def check_renormalization(self, debug=False):
+        MCW = self.VCW_second_derivative(self.subs_bgfields_to_VEV_values)
+        # Check so that the renormalization works
+        diff = self.MCT.subs(self.subs_bgfields_to_VEV_values).evalf() + sp.Matrix(MCW)
+        threshold = 1e-5
+        is_renormalized = all(element < threshold for element in diff)
+        self.is_renormalized = is_renormalized
+        if not is_renormalized and debug:
+            print("The model is not renormalized!")
+            print("See, difference: MCT + MCW =")
+            display(sp.Matrix(diff))
+        return is_renormalized
 
     ########## Numerical Solutions ##########
     
     def calculate_masses_higgs(self, subs_bgfield_values=None):
         if subs_bgfield_values is None:
             subs_bgfield_values = self.subs_bgfields_to_VEV_values
-        M_numerical = self.M0.subs(subs_bgfield_values).evalf()
+        M_numerical = sp.re(self.M0.subs(subs_bgfield_values)).evalf()
+        try:
+            M_numerical = np.array(M_numerical).astype(np.float64)
+        except Exception as e:
+            print("Error:", e)
+            display(M_numerical)
+            raise TypeError("Error in converting to numerical matrix")
         masses, states, R = diagonalize_numerical_matrix(M_numerical, sorting=True)
         return masses, R
     
     def calculate_masses_gauge(self, subs_bgfield_values):
-        M_numerical = self.M_kin.subs(subs_bgfield_values).evalf()
+        M_numerical = sp.re(self.M_kin.subs(subs_bgfield_values)).evalf()
+        M_numerical = np.array(M_numerical).astype(np.float64)
         masses, states, R = diagonalize_numerical_matrix(M_numerical, sorting=True)
         return masses, R
     
@@ -176,7 +229,8 @@ class ModelDataCalculator:
         assert VCT_params_eqs_sol is not None, "The analytical counterterm solutions has not been assigned"
         
         # Calculate the derivatives
-        subs_bgfield_values = {bgfield:VEV_value for bgfield, VEV_value in zip(self.model.bgfields, self.subs_VEV_values.values())}
+        subs_bgfield_values = {bgfield:sp.sympify(VEV_value).subs(self.subs_VEV_values) for bgfield, VEV_value in zip(self.model.bgfields, self.model.VEVs) if bgfield !=0}
+
         VCW_deriv_calc = CWPotentialDerivativeCalculator(self, self.model, subs_bgfield_values)
         NCW = VCW_deriv_calc.first_derivative()
         MCW = VCW_deriv_calc.second_derivative()
@@ -203,26 +257,30 @@ class ModelDataCalculator:
             print("========== Counterterm values ==========".center(50, "="))
             for symb, value in zip(VCT_params, VCT_params_values):
                 display(Math(sp.latex(symb) + "=" + sp.latex(value)))"""
-            
+        
         return VCT_params_values
     
     
-    def VCW_first_derivative(self, subs_bgfield_values, regulator=246**2):
-        return CWPotentialDerivativeCalculator(self, self.model, subs_bgfield_values, regulator).first_derivative()
+    def VCW_first_derivative(self, subs_bgfield_values, regulator=246**2, scale=246): # add mu/scale constatnt as input
+        return CWPotentialDerivativeCalculator(self, self.model, subs_bgfield_values, regulator, scale).first_derivative()
 
-    def VCW_second_derivative(self, subs_bgfield_values, regulator=246**2): 
+    def VCW_second_derivative(self, subs_bgfield_values, regulator=246**2, scale=246): 
     
-        return CWPotentialDerivativeCalculator(self, self.model, subs_bgfield_values, regulator).second_derivative()
+        return CWPotentialDerivativeCalculator(self, self.model, subs_bgfield_values, regulator, scale).second_derivative()
     
     ########## Mass Data set calculators ##########
      
     
-    def calculate_massdata2D_level0(self, N, Xrange, free_bgfield, sorting=True):
+    def calculate_massdata2D_level0(self, N, Xrange, free_bgfield, parametrization_bgfields=None, sorting=True):
         
         X = np.linspace(Xrange[0], Xrange[1], N)
         Y = np.zeros((N,8))
         #Y = [0 for i in range(N)]
         
+        if parametrization_bgfields is not None:
+            #parametrization_bgfields
+            M0 = self.M0.subs(parametrization_bgfields)
+        M0 = self.M0
         #Test
         #M0_numerical = self.M0.subs({free_bgfield: 246})
         #M0_numerical = np.array(M0_numerical).astype(np.float64)
@@ -232,7 +290,7 @@ class ModelDataCalculator:
         
         
         for i,x in enumerate(X):
-            M0_numerical = self.M0.subs({free_bgfield: x})
+            M0_numerical = M0.subs({free_bgfield: x})
             M0_numerical = np.array(M0_numerical).astype(np.float64)
             masses, field_states, R = diagonalize_numerical_matrix(M0_numerical, sorting=sorting)   
             #masses_new = np.zeros(8)
@@ -274,10 +332,11 @@ class ModelDataCalculator:
             #MCT = np.array(MCT_func(x)).astype(np.float64)
             M0 = M0_func(x)
             MCT = MCT_func(x)
-            np.add(M0, MCT, out=Meff)  # Meff = M0 + MCT
-            np.add(Meff, MCW, out=Meff)  # Meff += MCW
+            #np.add(M0, MCT, out=Meff)  # Meff = M0 + MCT
+            #np.add(Meff, MCW, out=Meff)  # Meff += MCW
             
-            #Meff = M0 + MCT + MCW
+            Meff = M0 + MCT + MCW
+            #display(sp.Matrix(MCT), sp.Matrix(MCW))
             masses, field_states, R = diagonalize_numerical_matrix(Meff, sorting=sorting)
             #masses_new = np.zeros(8)
             
@@ -376,13 +435,13 @@ class CWPotentialDerivativeCalculator:
     threshold = 1e-10  
     epsilon = 1/(4*np.pi)**2
     
-    def __init__(self, MDC:ModelDataCalculator, model:Model2HDM, subs_bgfield_values:dict, regulator=246**2): #
+    def __init__(self, MDC:Model2HDMCalculator, model:Model2HDM, subs_bgfield_values:dict, regulator=246**2, scale=246): #
         
         self.model = model
         self.MDC = MDC
         
         # Constants
-        self.mu = MDC.mu
+        self.mu = scale
         
         # Substitutions
         self.subs_bgfield_values = subs_bgfield_values
@@ -395,7 +454,7 @@ class CWPotentialDerivativeCalculator:
         # Add a regulator to the masses
         #display(self.masses_higgs)
         self.regulator = regulator
-        self.masses_higgs = self.masses_higgs + self.regulator
+        self.masses_higgs = self.masses_higgs #+ self.regulator
         #display(self.masses_higgs)
 
         # Fields
@@ -413,28 +472,37 @@ class CWPotentialDerivativeCalculator:
         #self.L_yuk = MDC.L_yuk_simplified.subs(subs_bgfield_values).evalf().subs({field:state for field,state in zip(model.massfields_fermions, self.massStates_fermions)})
         #self.V0 = MDC.V0_simplified.xreplace(subs_bgfield_values | subs_massStates_higgs).expand() 
         
-        
         #self.V0 = MDC.V0_simplified.xreplace(subs_bgfield_values) # ca 0.2s
         #self.V0 = custom_fast_expand_ultra(self.V0.xreplace(subs_massStates_higgs), model.massfields) # This takes the logest (ca 0.8-1s)
         
         #t0 = time.time()
         V0_se = se.sympify(MDC.V0_simplified).xreplace(subs_bgfield_values) 
         V0_se = V0_se.subs(subs_massStates_higgs).expand()
-        self.V0 = V0_se #sp.sympify(V0_se)
+        self.V0 = se.sympify(sp.sympify(V0_se).xreplace({sp.I:0})) #V0_se #sp.sympify(V0_se)
         #self.V0 = V0_se
         #print("Time for V0: ", time.time()-t0)
         #display(self.V0)
         #display(V0_se.as_coefficients_dict())
         
-        self.L_kin = MDC.L_kin_simplified.xreplace(subs_bgfield_values | subs_massStates_gauge).expand()
-
+        L_kin_se = se.sympify(MDC.L_kin_simplified).xreplace(subs_bgfield_values | subs_massStates_higgs | subs_massStates_gauge)
+        L_kin_se = L_kin_se.expand()#.evalf()
+        self.L_kin = se.sympify(sp.sympify(L_kin_se).xreplace({sp.I:0})) #L_kin_se.subs(se.I, 0)  #se.Reals(L_kin_se) #se.sympify(sp.re(sp.sympify(L_kin_se))) #L_kin_se.xreplace({se.I: 0}) #removes complex and simplifies # #L_kin_se #sp.sympify(L_kin_se)
+        #display(MDC.L_kin_simplified.expand())
+        #print(se.sympify(MDC.L_kin_simplified))
+        #display(subs_bgfield_values | subs_massStates_higgs | subs_massStates_gauge)
+        #print(self.L_kin.xreplace(se.I, 0) )
+        #display(sp.sympify(L_kin_se))
+        #self.L_kin = MDC.L_kin_simplified.xreplace(subs_bgfield_values | subs_massStates_gauge).expand()
+        
         # Couplings
         self.L3_higgs = self.calculate_couplings3(self.V0, model.massfields, model.massfields)
-        self.L3_gauge = self.calculate_couplings3(self.L_kin, model.fields_gauge, model.massfields)
+        self.L3_gauge = self.calculate_couplings3(self.L_kin, model.massfields_gauge, model.massfields)
         #self.L3_fermions = self.calculate_couplings3(self.L_yuk, model.fields_fermions, model.massfields)
         
+        #display(self.L3_gauge )
+        
         self.L4_higgs = self.calculate_couplings4(self.V0, model.massfields, model.massfields) # ca 0.15s
-        self.L4_gauge = self.calculate_couplings4(self.L_kin, model.fields_gauge, model.massfields)
+        self.L4_gauge = self.calculate_couplings4(self.L_kin, model.massfields_gauge, model.massfields)
         #self.L4_fermions = self.calculate_couplings4()
         
         #print("Debug")
@@ -457,6 +525,7 @@ class CWPotentialDerivativeCalculator:
         MCW_gauge = self.Hij(L3=self.L3_gauge, L4=self.L4_gauge, masses=self.masses_gauge, kT=3/2, coeff=3/2)
         MCW_fermions = np.zeros((8,8)) # Hij(L3, L4, masses, kT, coeff)
         MCW = MCW_higgs + MCW_gauge + MCW_fermions
+        #display(sp.Matrix(MCW_higgs), sp.Matrix(MCW_gauge))
         MCW = self.epsilon * self.R_higgs @ (MCW+MCW.T)/2 @ self.R_higgs.T
         MCW = np.where(np.abs(MCW) < self.threshold, 0, MCW)
         

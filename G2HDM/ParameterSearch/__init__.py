@@ -1,15 +1,11 @@
 
-from .Model2HDM import Model2HDM
-from .methods_Model2HDM import *
+from .ParameterSearch import ParamSearch
+from .parameter_constraints import *
 
-
-__all__ = ["Model2HDM",
-           "methods_Model2HDM",
-           "standard_potentials",
-              "standard_symbols"
+__all__ = ["ParamSearch",
+            "parameter_constraints"
            ]
 
-#
 import pkgutil
 import inspect
 import sys

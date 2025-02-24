@@ -5,9 +5,10 @@ from .Model2HDM import *
 from .ModelCalculators import *
 from .MultiProcessing import *
 from .utils import *
+from .ParameterSearch import *
 
 # List of packages to include when doing a "*" import. 
-__all__ = ["Model2HDM", "ModelCalculators", "utils", "MultiProcessing"]
+__all__ = ["Model2HDM", "ModelCalculators", "utils", "MultiProcessing", "ParameterSearch"]
 
 # Add all the methods from the packages to the __all__ list
 from .Model2HDM import __all__ as methods_all
@@ -20,6 +21,9 @@ from .MultiProcessing import __all__ as methods_all
 __all__.extend(methods_all)
 
 from .utils import __all__ as methods_all
+__all__.extend(methods_all)
+
+from .ParameterSearch import __all__ as methods_all
 __all__.extend(methods_all)
 
 

@@ -16,15 +16,14 @@ from ..MultiProcessing.class_MultiProcessing import *
 from ..MultiProcessing.methods_MultiProcessing import * 
 
 #
-from ..Model2HDM.class_Model2HDM import Model2HDM
+from ..Model2HDM.Model2HDM import Model2HDM
 from ..Model2HDM.methods_Model2HDM import *
-from .constraints_ParameterSearch import * # type: ignore
-from ..ModelCalculators.ModelDataCalculator import ModelDataCalculator
+from .parameter_constraints import *  
+from ..ModelCalculators.Model2HDMCalculator import Model2HDMCalculator
 
 
 #################### General Methods ####################
 
-# child class?
 class ParamSearch:
     # Add a folder inside the class
     # Plot points inside a bin (like histogram)
@@ -73,7 +72,7 @@ class ParamSearch:
     def add_point(self, point):
         pass
     
-    def get_point(self, index, output:str="all", filename:str=None):
+    def get_point(self, index, output:str="all", filename:str=None)->list:
         if filename == None:
             filename = self.name
         data = load_data(filename, path=self.path_data)
@@ -89,7 +88,27 @@ class ParamSearch:
         else:
             raise Exception("Invalid output. Choose 'all', 'V0_params', 'VCT_params' or 'masses'")
     
-    def number_of_points(self, filename:str=None):
+    def get_points(self, indexes:list, output:str="all", filename:str=None)->list[list]:
+        if filename == None:
+            filename = self.name
+        data = load_data(filename, path=self.path_data)
+        points = []
+        for index in indexes:
+            point = [data[key][index] for key in data.keys()]
+            if output == "all":
+                points.append(point)
+            elif output == "V0_params":
+                points.append(point[self.V0_params_indexrange[0]:self.V0_params_indexrange[1]])
+            elif output == "VCT_params":
+                points.append(point[self.VCT_params_indexrange[0]:self.VCT_params_indexrange[1]])
+            elif output == "masses":
+                points.append(point[-8:])
+            else:
+                raise Exception("Invalid output. Choose 'all', 'V0_params', 'VCT_params' or 'masses'")
+        return points
+    
+    
+    def number_of_points(self, filename:str=None)->int:
         if filename == None:
             filename = self.name
         data = load_data(filename, path=self.path_data)
@@ -125,7 +144,7 @@ class ParamSearch:
             masses_values[i] = sp.sign(sp.re(m))*sp.sqrt(sp.Abs(sp.re(m)))
         
         # Counterterm values
-        VCT_params_values = ModelDataCalculator(self.model, subs_V0_params_values, self.subs_VEV_values).counterterm_values()
+        VCT_params_values = Model2HDMCalculator(self.model, subs_V0_params_values, self.subs_VEV_values).counterterm_values()
         
         res = 0
         if output == "all":
@@ -151,7 +170,7 @@ class ParamSearch:
     
     #################### Parameter search #################### 
     
-    def unpack_data_multiprocessing(self, results):
+    def __unpack_data_multiprocessing(self, results):
         
         # unpack and merge the data
         params_keys = [sp.latex(symb) for symb in self.params_symbols]
@@ -174,46 +193,55 @@ class ParamSearch:
 
         return results_final
     
-    def ps_symbolic_masses(self, N_processes:int=1, runtime:int=None, iterations:int=None, filename=None, merge:bool=True):
+    # Main parameter search method
+    def ps(self, N_processes:int=1, runtime:int=None, iterations:int=None, filename=None, merge:bool=True, symbolic_masses:bool=True):
         
         # name 8
         if filename == None:
             filename = self.name
         
-        # Assign symbolic masses from model
-        masses = self.model.DATA.get("M0_eigenvalues_VEV", None) #could use M0 and diagonlize, but need to know the order then
-        assert masses != None, "M0_eigenvalues_VEV not found in model.DATA"
-        masses = [m.subs(self.subs_parameter_relations) for m in masses]
+        
         
         # Printing
         N_free_params = sum([1 for el in self.params_ranges if not isinstance(el, int)])
         print("Free parameters: ", N_free_params)
         
         # Multiprocessing
+        
         kwargs = {
             "param_ranges":self.params_ranges,
             "params_free":self.params_free,
             
             "params":self.params,
-            "masses":masses,
             
             "model":self.model,
             "subs_VEV_values":self.subs_VEV_values
         }
         
-        results = multiprocessing(iterator_symbolic_ps, kwargs, 
+        if symbolic_masses:
+            # Assign symbolic masses from model
+            masses = self.model.DATA.get("M0_eigenvalues_VEV", None) #could use M0 and diagonlize, but need to know the order then
+            assert masses != None, "M0_eigenvalues_VEV not found in model.DATA"
+            masses = [m.subs(self.subs_parameter_relations) for m in masses]
+            kwargs["masses"] = masses
+            iterator = iterator_symbolic_ps
+        else:
+            iterator = iterator_ps
+            kwargs["M0"] = self.model.getdata("M0", None)
+        
+        results = multiprocessing(iterator, kwargs, 
                               processes=N_processes, max_runtime=runtime, max_iterations=iterations)
     
-        results_final = self.unpack_data_multiprocessing(results)
+        results_final = self.__unpack_data_multiprocessing(results)
         
         # Save data to file
         #filename = filename + "_ps"
         save_data(results_final, filename=self.name, path=self.path_data, merge=merge, show_size=True)
         
     
-    def ps(self):
+    #def ps(self):
         """unsorted_masses"""
-        pass
+        #pass
         
     
     #################### Plotting ####################
@@ -253,8 +281,12 @@ def iterator_ps(kwargs):
     # VCT params
     subs_V0_params_values = {symb:val for symb,val in zip(model.V0_params, params_values[0:14])}
     
-    MDC = ModelDataCalculator(model, subs_V0_params_values, subs_VEV_values)
-    VCT_params_values = MDC.counterterm_values()
+    MDC = Model2HDMCalculator(model, subs_V0_params_values, subs_VEV_values)
+    
+    MDC.assign_counterterm_values(raise_warning=False)
+    if MDC.is_renormalized == False:
+        return None
+    VCT_params_values = MDC.VCT_params_values #MDC.counterterm_values()
         
     # Effective masses at vev
     masses,_ = MDC.calculate_masses_higgs()
@@ -311,7 +343,7 @@ def iterator_symbolic_ps(kwargs):
     # VCT params
     subs_V0_params_values = {symb:val for symb,val in zip(model.V0_params, params_values[0:14])}
         
-    VCT_params_values = ModelDataCalculator(model, subs_V0_params_values, subs_VEV_values).counterterm_values()
+    VCT_params_values = Model2HDMCalculator(model, subs_V0_params_values, subs_VEV_values).counterterm_values()
         
     # Effective masses at vev
     threshold = 1e-5

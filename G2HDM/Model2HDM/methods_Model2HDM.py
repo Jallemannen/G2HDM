@@ -254,14 +254,14 @@ def generate_level0_masses(model:object, VEV:bool=False, apply_tadpole:bool=True
     
     # Define subsitutions
     fields_to_zero_dict = {field:0 for field in fields}
-    bgfields_to_VEV_dict = {bg:VEV for bg, VEV in zip(bgfields, VEVs)}
+    bgfields_to_VEV_dict = {bg:VEV for bg, VEV in zip(bgfields, VEVs) if bg != 0}
     
     # Potential at VEV
     V0_VEV = V0.subs(bgfields_to_VEV_dict)
     
     if VEV:
         V0 = V0_VEV
-    
+
     # Generate tadpole eqs
     tadpole_eqs = generate_tadpole_equations(V0_VEV, fields, fields_to_zero_dict, False)
     
@@ -286,6 +286,9 @@ def generate_level0_masses(model:object, VEV:bool=False, apply_tadpole:bool=True
     
     cprint("Mass matrix:", show=show_procedure)
     cdisplay(M0, show=show_procedure)
+    cprint("Shape of mass matrix:", show=show_procedure)
+    cdisplay(M0.applyfunc(lambda x: 1 if x != 0 else 0), show=show_procedure)
+    
     
     # Solve for the eigenvalues
     M_neutral = None
@@ -443,8 +446,9 @@ def solve_counterterms(model, extra_eqs=None, show_procedure=True, show_solution
     # Check if the solution works
     cprint("========== Counterterm matrix ==========".center(textwidth, "="), show=show_procedure)
     cprint("Please check if the solution is correct", show=show_procedure)
-    subs_solution = {eq.lhs: eq.rhs for eq in solution_eqs} | {eq.lhs:0 for eq in undetermined_eqs}
-    MCT_sol = sp.simplify(MCT_VEV.subs(subs_solution).expand())
+    subs_solution = {eq.lhs: eq.rhs for eq in solution_eqs}
+    subs_undet = {eq.lhs:0 for eq in undetermined_eqs}
+    MCT_sol = sp.simplify(MCT_VEV.subs(subs_solution).subs(subs_undet).expand())
     cdisplay(MCT_VEV, MCT_sol, show=show_procedure)
     #check against MCW at vev
     

@@ -1,0 +1,80 @@
+
+====================================
+PROBLEMS/OPTIMIZATIONS
+====================================
+
+* Veff minima not at w=v. Should be so mathematically however...
+    - Vcw depends on masses --> depends on M0
+    - Vct depends on VCT params --> depends on Hij/Vcw. Assumes R = R_tree (same as renorm cond so no problem)
+    - Does mW make a difference?
+    - Soluton depends of choice of CTs?
+* Fix so that input in multiprocess gets aborted when process is finished
+* Vcw hessian has nonzero element at (1,3) for higgs basis??
+
+
+------------------------------------
+Opimizations
+------------------------------------
+* Diagonalize M (use symengine)
+
+
+====================================
+IMPLEMENTATIONS
+====================================
+* implement custom printing (jupiter/console)
+
+------------------------------------
+Base
+------------------------------------
+* Add check to make sure that the CTs really does renormalize
+* add mfermion masses
+    - Separate into to quarks and leptons
+    - Add to calc of Vcw
+* Constraints to parameters
+* Standalne method for Self-couplings (tri and quad) and analysis
+* Branching ratios (+feynman diagrams?)
+* extra constraints for counterterms?
+
+------------------------------------
+Methods
+------------------------------------
+* Eigenvalue tracker
+* Rotate model
+* param relations between two models
+* generic/div Methods for plotting / data collection
+
+
+------------------------------------
+Temperature Dependence
+------------------------------------
+- See Basler, BSMPTv3 (no g2hdm, uses Z2 sym)
+- See 2HDMC
+
+* VT potential correction
+* Transverse and Longitudunal gauge masses
+* Debye masses
+* J+,-,s,l
+* omega(T)
+
+
+
+
+====================================
+ANALYSIS
+====================================
+* Higgs
+* HiggsCB
+* Gen
+* GenCB
+
+* Apply parameter constraints 
+    - Basic:[positivity, global min]
+    - S,T,U
+
+====================================
+SUGGESTIONS
+====================================
+
+* Use a general potential gievn by tensor components, 
+eg Li, Lij, Lijk, Lijkl for couplings
+* Solve higgs basis --> expand to gen basis for basis-dep solutions

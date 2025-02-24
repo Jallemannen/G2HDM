@@ -1,11 +1,9 @@
 
-from .ModelDataCalculator import ModelDataCalculator
-from .ParameterSearch import *
-from .constraints_ParameterSearch import *
+from .Model2HDMCalculator import Model2HDMCalculator
+from .Model2HDMPlotter import Model2HDMPlotter
 
-__all__ = ["ModelDataCalculator",
-           "ParameterSearch",
-            "constraints_ParameterSearch"
+__all__ = ["Model2HDMCalculator",
+           "Model2HDMPlotter"
            ]
 
 import pkgutil
