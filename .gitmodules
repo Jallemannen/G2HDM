@@ -1,15 +1,7 @@
 [submodule "external/higgstools"]
 	path = external/higgstools
 	url = https://gitlab.com/higgsbounds/higgstools.git
-[submodule "external/external/hbdataset"]
-	path = external/external/hbdataset
-	url = https://gitlab.com/higgsbounds/hbdataset.git
-[submodule "external/external/hsdataset"]
-	path = external/external/hsdataset
-	url = https://gitlab.com/higgsbounds/hbdataset.git
-[submodule "external/hsdataset"]
-	path = external/hsdataset
-	url = https://gitlab.com/higgsbounds/hbdataset.git
 [submodule "external/hbdataset"]
 	path = external/hbdataset
 	url = https://gitlab.com/higgsbounds/hbdataset.git
+
