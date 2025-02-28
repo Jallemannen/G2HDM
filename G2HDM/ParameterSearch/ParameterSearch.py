@@ -18,8 +18,9 @@ from ..MultiProcessing.methods_MultiProcessing import *
 #
 from ..Model2HDM.Model2HDM import Model2HDM
 from ..Model2HDM.methods_Model2HDM import *
-from .parameter_constraints import *  
 from ..ModelCalculators.Model2HDMCalculator import Model2HDMCalculator
+
+from . parameter_constraints import *
 
 
 #################### General Methods ####################
@@ -32,11 +33,23 @@ class ParamSearch:
         
         # Input
         self.model = model
+        self.model_name = model.name
         self.name = name
         
         # Paths
-        self.path_data = os.path.join(model.path_data, "Parameter_Search")
+        os.makedirs(os.path.join(model.path_root, "paramerer_search"), exist_ok=True)
+        
+        self.path = os.path.join(model.path_root, "paramerer_search", name)
+        os.makedirs(self.path, exist_ok=True)
+        
+        self.path_data = os.path.join(self.path , "data")
         os.makedirs(self.path_data, exist_ok=True)
+        
+        self.path_plots = os.path.join(self.path , "figures")
+        os.makedirs(self.path_plots, exist_ok=True)
+        
+        self.path_plk = os.path.join(self.path , "ParamSearch_data", "ps.pkl")
+        os.makedirs(self.path_plk, exist_ok=True)
         
         # Default subs
         if subs_VEV_values == None:
@@ -50,6 +63,21 @@ class ParamSearch:
         self.VCT_params_indexrange  = [14, N]
         self.masses_indexrange  = [N, N+8]
         
+        # constraints
+        self.constraints_have_been_applied = False
+        self.applied_constraints = {
+            "positive masses": True, # Default
+            "renormalized": True, # Default
+            "perturbative": None, # Check later
+            "Tadpole conditions": None, # Check later
+            "positivity": False,
+            "unitarity": False,
+            "oblique": False,
+            
+        }
+        
+    def save(self):
+        save_pkl(self, self.path_plk)
         
     def assign_parameter_ranges(self, params_ranges:list, params_free:list, params_relations:list):
 
@@ -108,11 +136,12 @@ class ParamSearch:
         return points
     
     
-    def number_of_points(self, filename:str=None)->int:
+    def points(self, filename:str=None)->int:
+        """Returns the number of points in the datafile"""
         if filename == None:
             filename = self.name
-        data = load_data(filename, path=self.path_data)
-        return len(data)
+        dataframe = load_data(filename, path=self.path_data, as_dict=False)
+        return dataframe.shape[0]
     
     def default_point(self, output:str="all"):
         """Default point for the parameter search. May be used as a reference point."""
@@ -160,13 +189,35 @@ class ParamSearch:
         
         return res
 
+    def show(self, filename:str=None):
+        if filename == None:
+            filename = self.name
+        dataframe = load_data(filename, path=self.path_data, as_dict=False)
+        display(dataframe)
     
-    def apply_constraints(self, new_datafile_name:str, constraints:list):
+    def apply_constraints(self, new_name:str, constraints:list) -> object:
         """ 
-        creates a new datafile with params that satisfy the constraints
+        creates a new datafile and object with params that satisfy the constraints
         """
+        new_dataframe = load_data(filename=self.name, path=self.path_data, as_dict=False)
+        new_ps = ParamSearch(self.model, name=new_name, subs_VEV_values=self.subs_VEV_values)
+        new_ps.constraints_have_been_applied = True
         if "positivity" in constraints:
-            pass
+            new_dataframe = constraint_positivity(self, new_dataframe)
+            new_ps.applied_constraints["positivity"] = True
+        if "unitarity" in constraints:
+            new_dataframe = constraint_unitarity(self, new_dataframe)
+            new_ps.applied_constraints["unitarity"] = True
+        if "global minimum" in constraints:
+            new_dataframe = constraint_global_minimum(self, new_dataframe)
+            new_ps.applied_constraints["global minimum"] = True
+        if "oblique" in constraints:
+            new_dataframe = constraint_oblique(self, new_dataframe)
+            new_ps.applied_constraints["oblique"] = True
+            
+        save_data(new_dataframe, filename=new_name, path=new_ps.path_data, merge=False, show_size=True)
+            
+        return new_ps
     
     #################### Parameter search #################### 
     
@@ -195,6 +246,19 @@ class ParamSearch:
     
     # Main parameter search method
     def ps(self, N_processes:int=1, runtime:int=None, iterations:int=None, filename=None, merge:bool=True, symbolic_masses:bool=True):
+        
+        # Constraints
+        apply_constraints_post = False
+        if self.constraints_have_been_applied:
+            print("Constraints have been applied. The parameter search will be performed on the constrained data.")
+            response = input("Do you want to continue (y/n)?")
+            if response.lower() == "y":
+                response2 = input("Do you want to apply the same constraint post search? (y/n)?")
+                if response2.lower() == "y":
+                    apply_constraints_post = True
+            else:
+                print("Aborting parameter search.")
+                return
         
         # name 8
         if filename == None:

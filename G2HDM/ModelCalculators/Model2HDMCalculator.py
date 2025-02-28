@@ -211,7 +211,7 @@ class Model2HDMCalculator:
         mu = v
         
         # Coleman weinberg potential function
-        def V_CW(mass, dof, C):
+        def V_CW(mass, dof, spin, C):
 
             mass_squared = mass
             # Handle zero and negative masses
@@ -221,18 +221,15 @@ class Model2HDMCalculator:
                 #log_term = sp.sign(mass_squared)*sp.log(sp.Abs(mass_squared) / mu**2)
                 log_term = sp.log(mass_squared / mu**2)
 
-            factor = dof / (64 * sp.pi**2)
+            factor = dof / (64 * sp.pi**2) * (-1)**(2*spin)
 
             # Add this particle's contribution to the effective potential
             return factor * mass_squared**2 * (log_term - C)
         
-        
+        # Masses
         masses_higgs, _ = self.calculate_masses_higgs(subs_bgfield_values)
         masses_gauge, _ = self.calculate_masses_gauge(subs_bgfield_values)
         #masses_fermions = mdc.calculate_masses_fermions(subs_bgfield_values)
-        
-        # mass eigenvalues
-        masses = list(np.concatenate((masses_higgs,masses_gauge))) #+ masses_fermions
         
         # Spins
         spins_higgs = [0 for _ in masses_higgs]
@@ -256,14 +253,16 @@ class Model2HDMCalculator:
         scheme_constants_gauge = [3/2 for _ in masses_gauge]
         #scheme_constants_fermions = [5/6 for _ in masses_fermions]
 
-        # Generate the potential
-        #Masses = masses_higgs + masses_gauge #+ masses_fermions
+        # Collect the masses, spins, dofs and scheme constants
+        masses = list(np.concatenate((masses_higgs,masses_gauge))) 
         Dofs = dofs_higgs + dofs_gauge #+ dofs_fermions
+        Spins = spins_higgs + spins_gauge #+ spins_fermions
         Scheme_constants = scheme_constants_higgs + scheme_constants_gauge #+ scheme_constants_fermions
-        V_cw_expr = 0
         
-        for masses, dofs, scheme_constants in zip(masses, Dofs, Scheme_constants):
-            V_cw_expr += V_CW(masses, dofs, scheme_constants)
+        # Generate the potential
+        V_cw_expr = 0
+        for masses, dofs, spins, scheme_constants in zip(masses, Dofs, Spins, Scheme_constants):
+            V_cw_expr += V_CW(masses, dofs, spins, scheme_constants)
         
         return V_cw_expr
     

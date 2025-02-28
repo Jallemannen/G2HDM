@@ -22,9 +22,22 @@ given numerical parameters.
 
 
 
-
 ============================
 3. ParameterSearch
 ============================
 * Class for generating sets of numerical parameter sets (eg points).
 * Also has methods for applying constraints and sorting datasets (eg positivity). 
+
+
+============================
+4. ModelPlotter
+============================
+* Takes MC (ModelCalculator) as inputs (single or list). 
+* Contains methods to create plots corresponding to the data in the MC. 
+
+
+=====================================
+EXTERNAL
+=====================================
+
+HiggsTools Doc: https://higgsbounds.gitlab.io/higgstools/

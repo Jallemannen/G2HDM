@@ -141,7 +141,8 @@ def save_data(data, filename, path, merge = False, show_size = False):
     import pandas as pd
     import os
     
-    file_path = os.path.join(path, filename + ".csv")
+    filename = filename if filename.endswith(".csv") else filename + ".csv"
+    file_path = os.path.join(path, filename)
     
     if not os.path.exists(path):
         raise Exception("Data folder does not exist. Create it first.")
@@ -169,24 +170,25 @@ def save_data(data, filename, path, merge = False, show_size = False):
         file_size = os.path.getsize(file_path)
         file_size_string = file_size
         
-        if file_size/1024**2 >= 1:
-            file_size_string = f"{file_size:.2f} MB"
-        elif file_size/1024 >= 1:
-            file_size_string = f"{file_size:.2f} KB"
+        if file_size / 1024**2 >= 1:
+            file_size_string = f"{(file_size / 1024**2):.0f} MB"
+        elif file_size / 1024 >= 1:
+            file_size_string = f"{(file_size / 1024):.0f} KB"
         else:
             file_size_string = f"{file_size:.0f} Byte"
         
         print(f"Data saved to: {file_path} \nFile size on disk: {file_size_string}")
 
 # General data loading function
-def load_data(filename, path) -> dict:
+def load_data(filename, path, as_dict=True) -> dict:
     """
     Load data from a CSV file and return it as a dictionary.
     """
     import pandas as pd
     import os
     
-    file_path = os.path.join(path, filename + ".csv")  
+    filename = filename if filename.endswith(".csv") else filename + ".csv"
+    file_path = os.path.join(path, filename)  
         
     if not os.path.exists(file_path):
         raise Exception(f"File {file_path} does not exist.")
@@ -197,4 +199,7 @@ def load_data(filename, path) -> dict:
     except:
         raise Exception("Data could not be converted to numeric.")
     
-    return dataframe.to_dict(orient="list")
+    if as_dict:
+        return dataframe.to_dict(orient="list")
+    else:
+        return dataframe

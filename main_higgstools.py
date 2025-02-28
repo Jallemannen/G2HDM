@@ -11,8 +11,8 @@ import Higgs.Bounds as HB
 import Higgs.Signals as HS"""
 
 pred = HP.Predictions() # create the model predictions
-bounds = HB.Bounds("/path/to/HBDataset") # load HB dataset
-signals = HS.Signals("/path/to/HSDataset") # load HS dataset
+bounds = HB.Bounds("external/hbdataset") # load HB dataset
+signals = HS.Signals("external/hsdataset") # load HS dataset
 
 # add a SM-like particle
 h = pred.addParticle(HP.NeutralScalar("h", "even"))
