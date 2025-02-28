@@ -5,3 +5,6 @@
 	path = external/hbdataset
 	url = https://gitlab.com/higgsbounds/hbdataset.git
 
+[submodule "external/hsdataset"]
+	path = external/hsdataset
+	url = https://gitlab.com/higgsbounds/hsdataset.git
