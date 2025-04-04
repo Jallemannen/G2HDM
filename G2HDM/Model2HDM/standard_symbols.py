@@ -12,8 +12,8 @@ STANDARD_SYMBOLS["h6"] = sp.Symbol("h_6", real="true")
 STANDARD_SYMBOLS["h7"] = sp.Symbol("h_7", real="true")
 STANDARD_SYMBOLS["h8"] = sp.Symbol("h_8", real="true")
 
-STANDARD_SYMBOLS["Phi1"] = sp.Symbol("\Phi_1")
-STANDARD_SYMBOLS["Phi2"] = sp.Symbol("\Phi_2")
+STANDARD_SYMBOLS["Phi1"] = sp.symbols("\Phi_1", matrix=True, commutative=False) #sp.Symbol("\Phi_1")
+STANDARD_SYMBOLS["Phi2"] = sp.symbols("\Phi_2", matrix=True, commutative=False) #sp.Symbol("\Phi_2")
 STANDARD_SYMBOLS["field1_matrixsymbol"] = sp.MatrixSymbol("\Phi_1",2,1)
 STANDARD_SYMBOLS["field2_matrixsymbol"] = sp.MatrixSymbol("\Phi_2",2,1)
 

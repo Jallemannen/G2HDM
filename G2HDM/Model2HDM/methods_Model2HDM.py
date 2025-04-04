@@ -39,13 +39,33 @@ def generate_parameter_relations(model1, model2, R,
             print("========== Parameter Relations ==========")
 
     def find_parameter_eqs(model1, model2, R, extra_subs={}):
-        x1 = model1.field1 
-        x2 = model1.field2
-        params = model1.params("V0", complex=False)
-        params_op = model2.params("V0", complex=False)
-        potential = model1.potential("V0_display")
+        x1 = model1.field1_matrixsymbol
+        x2 = model1.field2_matrixsymbol
+        params = model1.V0_params_complex
+        params_op = model2.V0_params_complex
+        potential = model1.V0_display[0]
+        
+        # Get list of all params
+        def get_params(params):
+            params_conj = []
+            for param in params:
+                if param.is_real:
+                    params_conj.append(param)
+                else:
+                    params_conj.append(param)
+                    params_conj.append(sp.conjugate(param))
+            params = params_conj
+            return params
+        
+        params = get_params(params)
+        params_op = get_params(params_op)
         
         # define subs
+        #a1, a2 = sp.symbols("a1 a2", commutative=False) 
+        #subs_a = {dagger(x1)*x1:dagger(a1)*a1, dagger(x2)*x2:dagger(a2)*a2, dagger(x1)*x2:dagger(a1)*a2, dagger(x2)*x1:dagger(a2)*a1}
+        #display(*params)
+        subs0={}
+        #subs0 = {(dagger(x1)*x1)**2:1, (dagger(x2)*x2)**2:1, (dagger(x1)*x2)**2:1, (dagger(x2)*x1)**2:1}
         #subs1 = {dagger(x1_symb)*x1_symb:1, dagger(x2_symb)*x2_symb:1, dagger(x1_symb)*x2_symb:1, dagger(x2_symb)*x1_symb:1}
         subs1 = {dagger(x1)*x1:1, dagger(x2)*x2:1, dagger(x1)*x2:1, dagger(x2)*x1:1}
         #subs1 = {dagger(y1)*y1:1, dagger(y2)*y2:1, dagger(y1)*y2:1, dagger(y2)*y1:1}
@@ -54,15 +74,23 @@ def generate_parameter_relations(model1, model2, R,
         def separate_potential_terms_and_params(pot, params):
             #subs1 = {dagger(x1)*x1:1, dagger(x2)*x2:1, dagger(x1)*x2:1, dagger(x2)*x1:1} #x1_symb
             # Create list of terms we want to factor out
-            terms = pot.eval(x1, x2).as_ordered_terms()
+            terms = pot.expand().as_ordered_terms()
+            #display(pot.subs(subs0).doit(), *subs0.keys(), *subs0.values())
+            #print("terms")
+            #display(*terms)
+            #print("new terms")
             new_terms = []
             for term in terms:
+                #new_terms.append(term.subs(subs1)) 
                 symbols = term.free_symbols
                 for symb in symbols:
                     if symb in params:
-                        new_terms.append(term.subs(subs1)) #, sp.Rational(1,2):1})) #coeff*
+                        new_terms.append(term.subs(subs0).subs(subs1)) #, sp.Rational(1,2):1})) #coeff*
             #print("new_terms")
             #display(*new_terms)
+            #print(len(new_terms), len(terms))
+            #display(*new_terms)
+            
         
             # Collect all the parameters corresponing the the factored terms (ordered, and conjugated)
             params_symbols = []
@@ -76,7 +104,7 @@ def generate_parameter_relations(model1, model2, R,
             terms_sorted = []
             for term in new_terms:
                 #subs1 = {dagger(x1)*x1:1, dagger(x2)*x2:1, dagger(x1)*x2:1, dagger(x2)*x1:1} #x1_symb
-                coeff = term.subs(subs1).as_coeff_Mul()[0]
+                coeff = term.subs(subs0).subs(subs1).as_coeff_Mul()[0]
                 terms_prefactors.append(coeff)
                 terms_sorted.append(term/coeff)
                 
@@ -103,19 +131,19 @@ def generate_parameter_relations(model1, model2, R,
             raise Exception("The number of terms and parameters are not equal.")
         
         ### Insert the new basis into the potential
-        a1, a2 = sp.symbols("a1 a2")
+        a1, a2 = sp.symbols("a1 a2", matrix=True, commutative=False) 
         x = R * sp.Matrix([a1,a2])
         x = x.subs({a1: x1, a2: x2})
-        V0 = potential.eval(x[0], x[1], params=params_op).expand() #expand_power_exp=True, expand_mul=True
+        V0 = potential.subs({x1:x[0], x2:x[1]}).expand() #.doit() #expand_power_exp=True, expand_mul=True
         #V0_sorted = sp.collect(V0.expand()/2, new_terms)*2
         #V0_sorted = custom_collect(V0.expand()/2, new_terms)*2
-        V0_sorted = V0 # Make sure the potential is sorted out correctly
-        
+        V0_sorted = V0 #.simplify() # Make sure the potential is sorted out correctly
         ## Use this to debug (checks if the transform is correct)
         #display(V0_sorted.subs({model.omega2:0, model.omega_CP:0, model.omega:model.omega1}).expand())
         #display(V0_sorted.subs({model.omega1:0, model.omega_CP:0, model.omega:model.omega2}).expand())
         
         ## Debug
+        #print("debug")
         #display(x[0],x[1])
         #display(V0_sorted)
         #print("field_terms")
@@ -131,6 +159,13 @@ def generate_parameter_relations(model1, model2, R,
                 
                 factors = field_term.as_ordered_factors()
                 factors_terms = term.as_ordered_factors()
+                #print("factors")
+                #display(*factors, *factors_terms, len(factors))
+                """if len(factors) == 1:
+                    param_term1 = term.subs({field_term:1})
+                    param_term2 = 0
+                """
+                
                 if len(factors) == 4:
                     param_term1 = term.subs({field_term:1})
                     # check revese of (xixj)*(xixj) 
@@ -164,9 +199,10 @@ def generate_parameter_relations(model1, model2, R,
          
             if new_param_term != 0:
                 new_params.append(new_param_term/coeff )#/coeff #.subs({x1_symb:0, x2_symb:0})
-            else:
+            elif field_term != 1:
+                #display(field_terms)
                 raise Exception("No parameter found for term: {}".format(field_term))  
-        
+            
         # Check so that all terms has been sorted out
         try: 
             V0_rest[0].evalf() == 0
@@ -191,14 +227,14 @@ def generate_parameter_relations(model1, model2, R,
         return equations
 
     # Run the function
-    eqs_lambda_to_Z = find_parameter_eqs(False, extra_subs)
+    eqs_lambda_to_Z = find_parameter_eqs(model1, model2, R, extra_subs)
     if display_solution:
         print("Rotation matrix:")
         display(R)
         print("lambda in terms of Z:")
         display(*eqs_lambda_to_Z)
      
-    eqs_Z_to_lambda = find_parameter_eqs(True, extra_subs)
+    eqs_Z_to_lambda = find_parameter_eqs(model1, model2, R.inv(), extra_subs)
     if display_solution:
         print("--------------------------------------------")
         print("Inverse rotation matrix:")
@@ -266,7 +302,10 @@ def generate_level0_masses(model:object, VEV:bool=False, apply_tadpole:bool=True
     tadpole_eqs = generate_tadpole_equations(V0_VEV, fields, fields_to_zero_dict, False)
     
     # Solving tadpole eqs
-    sol_tadpole_eqs = linear_solve(tadpole_eqs, params)
+    params_sorted = [params[0], params[6], params[7],
+                     params[1], params[2], params[3], params[4], params[5], 
+                     params[8], params[9], params[10], params[11], params[12], params[13]]
+    sol_tadpole_eqs = linear_solve(tadpole_eqs, params_sorted)
     if apply_tadpole:
         sol_tadpole_dict = eqs_to_dict(sol_tadpole_eqs)
     else:

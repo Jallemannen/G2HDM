@@ -25,6 +25,8 @@ from ..utils import constants as const
 
 # Methods
 from .derivativesVCW import CWPotentialDerivativeCalculator
+from .couplings import calculate_couplings3, calculate_couplings4
+from .thermal_functions import V_T, V_daisy, daisy_mass_corrections_higgs, daisy_mass_corrections_gauge
 
 ####################################################################################
 
@@ -75,8 +77,9 @@ class Model2HDMCalculator:
         #self.fields_to_zero = {f: 0 for f in model.fields} | {f: 0 for f in model.fields_gauge}
         #self.subs_VEV_values = {symb:val for symb,val in zip(model.VEVs, VEV_values)}
         self.subs_bgfields_to_VEV = {symb:val for symb,val in zip(model.bgfields, model.VEVs)}
-        self.subs_bgfields_to_VEV_values = {symb:val for symb,val in zip(model.bgfields, subs_VEV_values.values())}
+        self.subs_bgfields_to_VEV_values = {symb:val for symb,val in zip(model.bgfields, VEV_values)}
         self.subs_fields_to_zero = {field:0 for field in model.fields}
+        self.bgfields_to_zero = {bgfield:0 for bgfield in model.bgfields}
         #self.subs_V0_params_values = {param:value for param, value in zip(model.V0_params, V0_params_values)}
         
         # Gauge subs
@@ -100,6 +103,7 @@ class Model2HDMCalculator:
 
         # Counterterm values
         self.MCT = None
+        self.is_renormalized = None
 
     ########## Methods for renormalization and counterterms ##########
 
@@ -125,11 +129,11 @@ class Model2HDMCalculator:
             threshold = 1e-5
             is_renormalized = all(element < threshold for element in diff)
             self.is_renormalized = is_renormalized
-        if not is_renormalized and debug:
+        if not self.is_renormalized and debug:
             print("The model is not renormalized!")
             print("See, difference: MCT + MCW =")
             display(sp.Matrix(diff))
-        return is_renormalized
+        return self.is_renormalized
     
     
     # Calculate and assign the VCT parameter values
@@ -179,9 +183,13 @@ class Model2HDMCalculator:
 
     ########## Numerical Solutions for masses ##########
     
-    def calculate_masses_higgs(self, subs_bgfield_values=None):
+    def calculate_masses_higgs(self, subs_bgfield_values=None, T=0):
+        
+        # Default to VEV values
         if subs_bgfield_values is None:
             subs_bgfield_values = self.subs_bgfields_to_VEV_values
+        
+        # Convert to numerical matrix
         M_numerical = sp.re(self.M0.subs(subs_bgfield_values)).evalf()
         try:
             M_numerical = np.array(M_numerical).astype(np.float64)
@@ -189,12 +197,60 @@ class Model2HDMCalculator:
             print("Error:", e)
             display(M_numerical)
             raise TypeError("Error in converting to numerical matrix")
+        
+        
+        # Calculate the mass corrections for non-zero temperature
+        if T != 0:
+            
+            V0_se = se.sympify(self.V0_simplified).xreplace(subs_bgfield_values) 
+            V0_se = V0_se.expand() #.subs(subs_massStates_higgs).expand()
+            V0_se = se.sympify(sp.sympify(V0_se).xreplace({sp.I:0}))
+            
+            L_kin_se = se.sympify(self.L_kin_simplified).xreplace(subs_bgfield_values) # subs_massStates_higgs | subs_massStates_gauge)
+            L_kin_se = L_kin_se.expand()#.evalf()
+            L_kin_se = se.sympify(sp.sympify(L_kin_se).xreplace({sp.I:0}))
+            
+            # Calculate the mass corrections
+            L4_higgs = calculate_couplings4(V0_se, self.model.fields, self.model.fields)
+            L4_gauge = calculate_couplings4(L_kin_se, self.model.fields_gauge, self.model.fields)
+            #L3_fermion = calculate_couplings3(self.L_yuk_simplified, self.model.fields, self.model.fields)
+            
+            M_T = daisy_mass_corrections_higgs(L4_higgs, L4_gauge, L3_fermion=0, T=T)
+            M_numerical += M_T
+            
+        
+        # Diagonalize the matrix
         masses, states, R = diagonalize_numerical_matrix(M_numerical, sorting=True)
         return masses, R
     
-    def calculate_masses_gauge(self, subs_bgfield_values):
+    def calculate_masses_gauge(self, subs_bgfield_values=None, T=0, use_debye_mass=True):
+        
+        # Default to VEV values
+        if subs_bgfield_values is None:
+            subs_bgfield_values = self.subs_bgfields_to_VEV_values
+
+        # Convert to numpy numerical matrix
         M_numerical = sp.re(self.M_kin.subs(subs_bgfield_values)).evalf()
-        M_numerical = np.array(M_numerical).astype(np.float64)
+        try:
+            M_numerical = np.array(M_numerical).astype(np.float64)
+        except Exception as e:
+            print("Error:", e)
+            display(M_numerical)
+            raise TypeError("Error in converting to numerical matrix")
+        
+        # Calculate the mass corrections for non-zero temperature
+        if T != 0:
+            L_kin_se = se.sympify(self.L_kin_simplified).xreplace(subs_bgfield_values) # subs_massStates_higgs | subs_massStates_gauge)
+            L_kin_se = L_kin_se.expand()#.evalf()
+            L_kin_se = se.sympify(sp.sympify(L_kin_se).xreplace({sp.I:0}))
+            
+            # Calculate the mass corrections
+            L4_gauge = calculate_couplings4(L_kin_se, self.model.fields_gauge, self.model.fields)
+            
+            M_T = daisy_mass_corrections_gauge(L4_gauge, T, use_debye_mass)
+            M_numerical += M_T
+        
+        # Diagonalize the matrix
         masses, states, R = diagonalize_numerical_matrix(M_numerical, sorting=True)
         return masses, R
     
@@ -203,7 +259,7 @@ class Model2HDMCalculator:
     
     ########## Numerical Solutions for CW potential ##########
     
-    def calculate_VCW_point(self, subs_bgfield_values, only_top=True):
+    def calculate_VCW_point(self, subs_bgfield_values, T=0, only_top=True):
         
         
         # Constants
@@ -214,12 +270,16 @@ class Model2HDMCalculator:
         def V_CW(mass, dof, spin, C):
 
             mass_squared = mass
+            sign = 1
+            if mass_squared < 0:
+                sign = -1
+                mass_squared = -mass_squared
             # Handle zero and negative masses
-            if mass_squared < 1e-5: #.is_zero:
+            if np.abs(mass_squared) < 1e-5: #.is_zero:
                 log_term = 0
             else:
                 #log_term = sp.sign(mass_squared)*sp.log(sp.Abs(mass_squared) / mu**2)
-                log_term = sp.log(mass_squared / mu**2)
+                log_term = sign*sp.log(mass_squared / mu**2)
 
             factor = dof / (64 * sp.pi**2) * (-1)**(2*spin)
 
@@ -227,9 +287,30 @@ class Model2HDMCalculator:
             return factor * mass_squared**2 * (log_term - C)
         
         # Masses
-        masses_higgs, _ = self.calculate_masses_higgs(subs_bgfield_values)
-        masses_gauge, _ = self.calculate_masses_gauge(subs_bgfield_values)
+        masses_higgs, _ = self.calculate_masses_higgs(subs_bgfield_values, T)
+        masses_gauge, _ = self.calculate_masses_gauge(subs_bgfield_values, T)
         #masses_fermions = mdc.calculate_masses_fermions(subs_bgfield_values)
+        
+        ####################################
+        # TESTING
+        """
+        new_masses_higgs = []
+        for i, mass in enumerate(masses_higgs):
+            if i in [0,4,5,6,7]: #[0,1,2,3,4,5,6,7]: # [1,2,3,6,7] # 0 is fine, [0,4,5]
+                new_masses_higgs.append(mass)
+            else:
+                new_masses_higgs.append(0)
+        masses_higgs = new_masses_higgs
+        """
+        #masses_higgs[0] = masses_higgs[0] * 0.5 #2/3
+        #masses_higgs[1] = masses_higgs[1] * 0.5
+        #masses_higgs[2] = masses_higgs[2] * 0.5 #2/3
+        #masses_higgs[3] = masses_higgs[3] * 0.5 #2/3
+        #masses_higgs = [mass*0.7 for mass in masses_higgs]
+        ####################################
+        
+        #masses_higgs = [mass for i, mass in enumerate(masses_higgs) if i in [1,2,3,6,7]]  #/ 1.1 #ca
+        masses_gauge = masses_gauge #/ 1.1 #ca
         
         # Spins
         spins_higgs = [0 for _ in masses_higgs]
@@ -265,8 +346,7 @@ class Model2HDMCalculator:
             V_cw_expr += V_CW(masses, dofs, spins, scheme_constants)
         
         return V_cw_expr
-    
-    
+       
     def VCW_first_derivative(self, subs_bgfield_values, regulator=246**2, scale=246): # add mu/scale constatnt as input
         return CWPotentialDerivativeCalculator(self, self.model, subs_bgfield_values, regulator, scale).first_derivative()
 
@@ -277,16 +357,18 @@ class Model2HDMCalculator:
     ########## Mass Data set calculators ##########
      
     
-    def calculate_massdata2D_level0(self, N, Xrange, free_bgfield, parametrization_bgfields=None, sorting=True):
+    def calculate_massdata2D_level0(self, N, Xrange, free_bgfield, T=0, 
+                                    parametrization_bgfields=None, sorting=True):
         
         X = np.linspace(Xrange[0], Xrange[1], N)
         Y = np.zeros((N,8))
         #Y = [0 for i in range(N)]
-        
+        """
         if parametrization_bgfields is not None:
             #parametrization_bgfields
             M0 = self.M0.subs(parametrization_bgfields)
         M0 = self.M0
+        """
         #Test
         #M0_numerical = self.M0.subs({free_bgfield: 246})
         #M0_numerical = np.array(M0_numerical).astype(np.float64)
@@ -294,11 +376,16 @@ class Model2HDMCalculator:
         #display(self.M0, sp.Matrix(M0_numerical))
         #display(masses)
         
+        #masses_gauge = self.calculate_masses_gauge({free_bgfield: x})[0]
         
         for i,x in enumerate(X):
+            """
             M0_numerical = M0.subs({free_bgfield: x})
             M0_numerical = np.array(M0_numerical).astype(np.float64)
-            masses, field_states, R = diagonalize_numerical_matrix(M0_numerical, sorting=sorting)   
+            masses, field_states, R = diagonalize_numerical_matrix(M0_numerical, sorting=sorting) 
+            """
+            masses = self.calculate_masses_higgs({free_bgfield: x}, T)[0]
+              
             #masses_new = np.zeros(8)
             for j, m in enumerate(masses):
                 Y[i,j] = np.sign(m)*np.sqrt(np.abs(m))
@@ -378,22 +465,49 @@ class Model2HDMCalculator:
     
     ########## Potential Data set calculators ##########
      
-    def calculate_Vdata2D_level0(self, N, free_bgfield, Xrange):
+    def calculate_Vdata2D_level0(self, N, Xrange, free_bgfield=None, free_bg_fields_expr=None, parametrization=None, subs_bgfields_extra={}):
+        
+
         
         X = np.linspace(Xrange[0], Xrange[1], N)
         Y = np.zeros(N)
         
+        subs_bgfields_remaining = {}
+        for bgfield in self.model.bgfields:
+            if bgfield != free_bgfield or bgfield not in subs_bgfields_extra:
+                subs_bgfields_remaining.update({bgfield:0})
+        subs_bgfields_remaining.update(subs_bgfields_extra)
+        
+        t0 = time.time()
         for i,x in enumerate(X):
-            V0_numerical = self.V0_simplified.subs({free_bgfield: x}).subs(self.subs_fields_to_zero).evalf()
+            t_last = time.time()
+                    
+            if free_bgfield != None:
+                subs_bg_fields = {free_bgfield: x}
+            elif free_bg_fields_expr != None and parametrization != None:
+                subs_parametrization = {parametrization:x}
+                subs_bg_fields = {self.model.bgfields[i]:sp.Add(free_bg_fields_expr[i]).subs(subs_parametrization) for i in range(8)}
+            else:
+                raise "Need to choose bgfield/(s)"
+                
+            V0_numerical = self.V0_simplified.subs(subs_bg_fields).subs(subs_bgfields_remaining|self.subs_fields_to_zero).evalf()
+            
             Y[i] = V0_numerical
+
+            # Print progress
+            ti = time.time()
+            t = ti-t0
+            t_avg = t/(i+1)
+            t_now = ti - t_last
+            print(f"| Progress: {i+1}/{N} at x={x:0.1f}={x/246:0.2f}v | Estimated time left: {sec_to_hms(t_avg*(N-i-1))} | Elapsed time: {sec_to_hms(t)} // {sec_to_hms(t_avg*N)} | Time per point: {t_avg:0.3f}s | " , end="\r")
         
         return X, Y
     
-    def calculate_Vdata3D_level0(self, N, free_bgfields, Xranges):
-        Xrange = Xranges[0]
-        Yrange = Xranges[1]
-        omega1 = free_bgfields[0]
-        omega2 = free_bgfields[1]
+    def calculate_Vdata3D_level0(self, N, Xrange, Yrange, free_bgfields=None, free_bg_fields_expr=None, parametrization=None, subs_bgfields_extra={}):
+
+        #omega1 = free_bgfields[0]
+        #omega2 = free_bgfields[1]
+        
         # Define grid points
         X = np.linspace(Xrange[0], Xrange[1], N)
         Y = np.linspace(Yrange[0], Yrange[1], N)
@@ -402,29 +516,136 @@ class Model2HDMCalculator:
         Z = np.zeros((N,N))
         # Iterate over grid points
         for i in range(N):
+            print(f"Progress: {i+1}/{N}", end="\r")
+            
+            
             for j in range(N):
+                subs_bgfields_remaining = {}
+                # subs parametrized bgfields
                 x, y = X[i, j], Y[i, j]
-                V0_numerical = self.V0_simplified.subs({omega1: x, omega2: y})
+                if free_bgfields != None:
+                    subs_bgfields = {free_bgfields[0]: x, free_bgfields[1]: y}
+                    for bgfield in self.model.bgfields:
+                        if bgfield not in free_bgfields or bgfield not in subs_bgfields_extra:
+                            subs_bgfields_remaining.update({bgfield:0})
+                elif free_bg_fields_expr != None and parametrization != None:
+                    subs_parametrization = {parametrization[0]:x, parametrization[1]:y}
+                    subs_bgfields = {self.model.bgfields[i]:sp.Add(free_bg_fields_expr[i]).subs(subs_parametrization) for i in range(8)}
+                else:
+                    raise "Need to choose bgfield/(s)"
+                
+                # subs remaining bgfields
+                
+                
+                subs_bgfields_remaining.update(subs_bgfields_extra)
+                
+                V0_numerical = self.V0_simplified.subs(subs_bgfields).subs(subs_bgfields_remaining|self.subs_fields_to_zero).evalf()
                 Z[i,j] = V0_numerical
                 
         return X, Y, Z
     
-    def calculate_Vdata2D_level1(self, N, free_bgfield, Xrange):
+    def calculate_Vdata2D_level1(self, N, Xrange, free_bgfield=None, free_bg_fields_expr=None, parametrization=None, T=0):
         
         X = np.linspace(Xrange[0], Xrange[1], N)
         Y = np.zeros(N)
+        v = 246
+        #bgfields_to_zero = self.bgfields_to_zero.copy()
+        #bgfields_to_zero.pop(free_bgfield)
+        bgfields_to_zero = self.bgfields_to_zero.copy()
         
         self.assign_counterterm_values()
         
         for i,x in enumerate(X):
+            
+            if free_bgfield != None:
+                subs_bg_fields = {free_bgfield: x}
+
+                bgfields_to_zero = {}
+                for bgfield in self.model.bgfields:
+                    if bgfield != free_bgfield:
+                        bgfields_to_zero.update({bgfield:0})
+            elif free_bg_fields_expr != None and parametrization != None:
+                subs_parametrization = {parametrization:x}
+                subs_bg_fields = {self.model.bgfields[i]:sp.Add(free_bg_fields_expr[i]).subs(subs_parametrization) for i in range(8)}
+                
+                bgfields_to_zero = {}
+                for bgfield, bgfield_expr in zip(self.model.bgfields, free_bg_fields_expr):
+                    if bgfield_expr == 0:
+                        bgfields_to_zero.update({bgfield:0})
+            else:
+                raise "Need to choose bgfield/(s)"
+            
             print(f"Progress {i+1}/{N} at x=", x, end="\r")
-            V0_point = self.V0_simplified.subs({free_bgfield: x}).subs(self.subs_fields_to_zero).evalf()
-            Vcw_point = self.calculate_VCW_point({free_bgfield: x}, only_top=True)
-            Vct_point = self.VCT_simplified.subs({free_bgfield: x}).subs(self.subs_VCT_params_values).subs(self.subs_fields_to_zero).evalf()
-            Y[i] = V0_point + Vcw_point + Vct_point
+            V0_point = self.V0_simplified.subs(subs_bg_fields|bgfields_to_zero).subs(self.subs_fields_to_zero).evalf()
+            Vcw_point = self.calculate_VCW_point(subs_bg_fields|bgfields_to_zero, T, only_top=True)
+            Vct_point = self.VCT_simplified.subs(subs_bg_fields|bgfields_to_zero).subs(self.subs_VCT_params_values).subs(self.subs_fields_to_zero).evalf()
+            if T != 0:
+                masses_higgs = self.calculate_masses_higgs(subs_bg_fields|bgfields_to_zero)[0]
+                masses_gauge = self.calculate_masses_gauge(subs_bg_fields|bgfields_to_zero)[0]
+                #masses_higgs_T = self.calculate_masses_higgs({free_bgfield: x}, T)[0]
+                masses_gauge_T = self.calculate_masses_gauge(subs_bg_fields|bgfields_to_zero, T)[0]
+                masses_quarks = 0 #[0 for _ in range(8)]
+                VT = V_T(masses_higgs, masses_gauge, masses_quarks, T)
+                #VT += V_daisy(masses_gauge, masses_gauge_T, T)
+            else:
+                VT = 0
+            
+            Y[i] = V0_point + Vcw_point + Vct_point + VT /v # why v here?
         
         return X, Y
     
-    def calculate_Vdata3D_level1(self, model):
-        pass
+    def calculate_Vdata3D_level1(self, N, Xrange, Yrange, free_bgfields=None, free_bg_fields_expr=None, parametrization=None, T=0, subs_bgfields_extra={}):
+        #omega1 = free_bgfields[0]
+        #omega2 = free_bgfields[1]
+        # Define grid points
+        X = np.linspace(Xrange[0], Xrange[1], N)
+        Y = np.linspace(Yrange[0], Yrange[1], N)
+        X, Y = np.meshgrid(X, Y)
+        
+        Z = np.zeros((N,N))
+        # Iterate over grid points
+        for i in range(N):
+            print(f"Progress: {i+1}/{N}", end="\r")
+            for j in range(N):
+                subs_bgfields_remaining = {}
+                # subs parametrized bgfields
+                x, y = X[i, j], Y[i, j]
+                if free_bgfields != None:
+                    subs_bgfields = {free_bgfields[0]: x, free_bgfields[1]: y}
+                    for bgfield in self.model.bgfields:
+                        if bgfield not in free_bgfields or bgfield not in subs_bgfields_extra:
+                            subs_bgfields_remaining.update({bgfield:0})
+                elif free_bg_fields_expr != None and parametrization != None:
+                    subs_parametrization = {parametrization[0]:x, parametrization[1]:y}
+                    subs_bgfields = {self.model.bgfields[i]:sp.Add(free_bg_fields_expr[i]).subs(subs_parametrization) for i in range(8)}
+                else:
+                    raise "Need to choose bgfield/(s)"
+                
+                # subs remaining bgfields
+                subs_bgfields_remaining.update(subs_bgfields_extra)
+                
+                V0_point = self.V0_simplified.subs(subs_bgfields).subs(subs_bgfields_remaining|self.subs_fields_to_zero).evalf()
+                Vcw_point = self.calculate_VCW_point(subs_bgfields_remaining.update(subs_bgfields), T, only_top=True)
+                Vct_point = self.VCT_simplified.subs(subs_bgfields).subs(subs_bgfields_remaining|self.subs_VCT_params_values).subs(self.subs_fields_to_zero).evalf()
+                
+                if T != 0:
+                    masses_higgs = self.calculate_masses_higgs(subs_bgfields|subs_bgfields_remaining)[0]
+                    masses_gauge = self.calculate_masses_gauge(subs_bgfields|subs_bgfields_remaining)[0]
+                    #masses_higgs_T = self.calculate_masses_higgs({free_bgfield: x}, T)[0]
+                    masses_gauge_T = self.calculate_masses_gauge(subs_bgfields|subs_bgfields_remaining, T)[0]
+                    masses_quarks = 0 #[0 for _ in range(8)]
+                    VT = V_T(masses_higgs, masses_gauge, masses_quarks, T)
+                    #VT += V_daisy(masses_gauge, masses_gauge_T, T)
+                else:
+                    VT = 0
+                
+                
+                Z[i,j] = V0_point + Vcw_point + Vct_point + VT /246 # why v here?
+                
+        return X, Y, Z
 
+
+
+    ########## Temperature dependent plots ##########
+    
+    

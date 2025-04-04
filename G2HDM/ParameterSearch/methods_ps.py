@@ -29,7 +29,7 @@ def load_ps(model:str, ps:str, path:str=None, project_root = None):
     if project_root is None:
         project_root = os.path.abspath(os.path.join(os.getcwd(), ''))
     if path == None:
-        path = os.path.join(project_root, "saved_models", f"{model}", f"{ps}" "ParamSearch_data", "ps.pkl")
+        path = os.path.join(project_root, "saved_models", f"{model}", "parameter_search", f"{ps}", "ParamSearch_data", "ps.pkl")
 
     return load_pkl(path)    
 

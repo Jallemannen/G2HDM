@@ -1,12 +1,14 @@
 
 from ..utils.methods_math import dagger
 
+# Always write out expressions explicitly (i.e no parentheses)
+
 
 def potential_V0(x1,x2,params):
     m11, m22, L1, L2, L3, L4, L12, L5, L6, L7 = params[:10]
-    V_mass = m11 * dagger(x1)*(x1) + m22 * dagger(x2)*(x2) - (L12 *dagger(x1)*(x2) + L12.conjugate() * dagger(x2)*(x1) )
-    V_lambda14 = L1/2 * (dagger(x1)*x1)**2 + L2/2 * (dagger(x2)*x2)**2 + L3 * (dagger(x1)*x1)*(dagger(x2)*x2) + L4 * (dagger(x1)*x2) * (dagger(x2)*x1)
-    V_lambda57 = L5/2 * (dagger(x1)*x2)**2 + L6 * (dagger(x1)*x1)*(dagger(x1)*x2) + L7 * (dagger(x2)*x2)*(dagger(x1)*x2)
+    V_mass = m11 * dagger(x1)*(x1) + m22 * dagger(x2)*(x2) - L12 *dagger(x1)*(x2) - L12.conjugate() * dagger(x2)*(x1) 
+    V_lambda14 = L1/2 * (dagger(x1)*x1)*(dagger(x1)*x1) + L2/2 * (dagger(x2)*x2)*(dagger(x2)*x2) + L3 * (dagger(x1)*x1)*(dagger(x2)*x2) + L4 * (dagger(x1)*x2) * (dagger(x2)*x1)
+    V_lambda57 = L5/2 * (dagger(x1)*x2)*(dagger(x1)*x2) + L6 * (dagger(x1)*x1)*(dagger(x1)*x2) + L7 * (dagger(x2)*x2)*(dagger(x1)*x2)
     V_lambda57_hc = L5.conjugate()/2 * (dagger(x2)*(x1))*(dagger(x2)*(x1)) + L6.conjugate() * (dagger(x1)*(x1))*(dagger(x2)*(x1)) + L7.conjugate() * (dagger(x2)*(x2))*(dagger(x2)*(x1))
     return V_mass + V_lambda14 + V_lambda57 + V_lambda57_hc
 

@@ -130,14 +130,14 @@ class Model2HDMPlotter:
         args: (N, free_bgfield, Xrange, MC, levels)
         Returns a dictionary possibly containing both "V0" and "V1".
         """
-        N, free_bgfield, Xrange, MC, levels = args
+        N, Xrange, free_bgfield, MC, levels = args
         data = {}
         if 0 in levels:
-            X, V0 = MC.calculate_Vdata2D_level0(N, free_bgfield, Xrange)
+            X, V0 = MC.calculate_Vdata2D_level0(N, Xrange, free_bgfield)
             data["X"] = X
             data["V0"] = V0
         if 1 in levels:
-            X, V1 = MC.calculate_Vdata2D_level1(N, free_bgfield, Xrange)
+            X, V1 = MC.calculate_Vdata2D_level1(N, Xrange, free_bgfield)
             if "X" not in data:
                 data["X"] = X
             data["V1"] = V1
@@ -163,7 +163,7 @@ class Model2HDMPlotter:
 
     # ===================== Potential Data Processing =====================
 
-    def calculate_plot_potential(self, N, free_bgfield, Xrange, levels, base_filename="potential_data",
+    def calculate_plot_potential(self, N, Xrange, free_bgfield, levels, base_filename="potential_data",
                                    overwrite=False, multiprocessing_enabled=False):
         """
         Compute potential data for all models and for each requested level.
@@ -184,7 +184,7 @@ class Model2HDMPlotter:
                     break
 
         if indices_to_compute:
-            args_to_compute = [(N, free_bgfield, Xrange, self.MC_list[i], levels)
+            args_to_compute = [(N, Xrange, free_bgfield, self.MC_list[i], levels)
                                for i in indices_to_compute]
             # Print whether we're computing in parallel or serially.
             if multiprocessing_enabled:
@@ -216,7 +216,7 @@ class Model2HDMPlotter:
 
         return results_dict
 
-    def plot_potential(self, N, free_bgfield, Xrange, levels=[0, 1],
+    def plot_potential(self, N, Xrange, free_bgfield, levels=[0, 1],
                        multiprocessing_enabled=False, overwrite=False, base_filename="potential_data",
                        save=True):
         """
@@ -231,7 +231,7 @@ class Model2HDMPlotter:
             raise ValueError("No models provided for plotting.")
 
         base_filename = base_filename if base_filename.endswith(".csv") else base_filename + ".csv"
-        potential_results = self.calculate_plot_potential(N, free_bgfield, Xrange, levels,
+        potential_results = self.calculate_plot_potential(N, Xrange, free_bgfield, levels,
                                                            base_filename=base_filename,
                                                            overwrite=overwrite,
                                                            multiprocessing_enabled=multiprocessing_enabled)
@@ -408,3 +408,5 @@ class Model2HDMPlotter:
             fig.savefig(os.path.join(self.path_plots, mass_cfg["mass_fig_filename"]),
                         dpi=self.plot_config["dpi"])
         plt.show()
+
+

@@ -21,6 +21,67 @@ from .standard_symbols import STANDARD_SYMBOLS
 from .standard_potentials import potential_V0, potential_VCT_gen
 from . import standard_fields
 
+#### TEST
+# All possible parameters for the tree-level potential
+# Translate these to the list of couplings
+V0_params_symbols = {
+    
+    # cubic
+    "mu11": sp.Symbol("\mu_{11}", real=True),
+    "mu22": sp.Symbol("\mu_{22}", real=True),
+    "mu12": sp.Symbol("\mu_{12}"),
+    
+    # quartic
+    "L1": sp.Symbol("\Lambda_{1}", real=True),
+    "L2": sp.Symbol("\Lambda_{2}", real=True),
+    "L3": sp.Symbol("\Lambda_{3}", real=True),
+    "L4": sp.Symbol("\Lambda_{4}", real=True),
+    "L5": sp.Symbol("\Lambda_{5}"),
+    "L6": sp.Symbol("\Lambda_{6}"),
+    "L7": sp.Symbol("\Lambda_{7}"),
+}
+VCT_params_symbols = {
+    
+    # cubic
+    "dmu11": sp.Symbol("\delta\mu_{11}", real=True),
+    "dmu22": sp.Symbol("\delta\mu_{22}", real=True),
+    "dmu12": sp.Symbol("\delta\mu_{12}"),
+    
+    # quartic
+    "dL1": sp.Symbol("\delta\Lambda_{1}", real=True),
+    "dL2": sp.Symbol("\delta\Lambda_{2}", real=True),
+    "dL3": sp.Symbol("\delta\Lambda_{3}", real=True),
+    "dL4": sp.Symbol("\delta\Lambda_{4}", real=True),
+    "dL5": sp.Symbol("\delta\Lambda_{5}"),
+    "dL6": sp.Symbol("\delta\Lambda_{6}"),
+    "dL7": sp.Symbol("\delta\Lambda_{7}"),
+    
+    # linear
+    "dT1": sp.Symbol("\delta T_{1}"),
+    "dT2": sp.Symbol("\delta T_{2}"),
+    "dTCP": sp.Symbol("\delta T_{CP}"),
+    "dTCB": sp.Symbol("\delta T_{CB}"),
+    
+    # third order
+    "dD111": sp.Symbol("\delta D_{111}"),
+    "dD112": sp.Symbol("\delta D_{112}"),
+    "dD113": sp.Symbol("\delta D_{113}"),
+    "dD114": sp.Symbol("\delta D_{114}"),
+    "dD115": sp.Symbol("\delta D_{115}"),
+    "dD116": sp.Symbol("\delta D_{116}"),
+    "dD117": sp.Symbol("\delta D_{117}"),
+    "dD118": sp.Symbol("\delta D_{118}"),
+    "dD122": sp.Symbol("\delta D_{122}"),
+    "dD123": sp.Symbol("\delta D_{123}"),
+    "dD124": sp.Symbol("\delta D_{124}"),
+    
+
+}
+    
+
+
+#####
+
 
 class Model2HDM:
     
@@ -69,6 +130,8 @@ class Model2HDM:
         # Div fields
         self.field1_matrixsymbol = p["field1_matrixsymbol"]
         self.field2_matrixsymbol = p["field2_matrixsymbol"]
+        self.field1_symbol = p["Phi1"]
+        self.field2_symbol = p["Phi2"]
         
         self.massfields = [p["h1"], p["h2"], p["h3"], p["h4"], p["h5"], p["h6"], p["h7"], p["h8"]]
         
@@ -85,6 +148,7 @@ class Model2HDM:
         self.V0_params_complex = [p["mu11"], p["mu22"], p["L1"], p["L2"], p["L3"], p["L4"], p["mu12"], p["L5"], p["L6"], p["L7"]]
         self.V0_params = subs_complex_params(self.V0_params_complex)
         self.V0 = None
+        self.V0_display = None
         self.construct_V0(potential_V0, self.V0_params_complex, fields = self.fields, bgfields = self.bgfields)
         
         self.VCT_params_complex = [p["dmu11"], p["dmu22"], p["dL1"], p["dL2"], p["dL3"], p["dL4"], 
@@ -107,6 +171,11 @@ class Model2HDM:
         
         # Leptons
         ...
+        
+        # Parametrization (params to relate to the rotatied basis)
+        self.R_basis = None
+        self.basis_params:list = self.bgfields
+        self.subs_basis_params:dict = {}
         
         # Generica Data for storing eg analytical solutions
         self.DATA = {}
@@ -288,27 +357,61 @@ class Model2HDM:
     
     #################### Methods ####################
     
-    def rotate(self, R:sp.Matrix) -> None:
+    def rotate(self, R:sp.Matrix, basis_params={}) -> None:
         """
         Rotate the fields by the matrix R.
         """
-        # Get the new symbols from R
-        new_symbols = {}
-        basis_params = []
-        for symb in R.free_symbols:
-            new_symbols[symb.name] = symb
-            basis_params.append(symb)
-        self.update_symbols(new_symbols)
-        self.basis_params = basis_params
+        
         
         # Rotate the fields
-        vec = sp.Matrix([self.field1, self.field2])
+        """vec = sp.Matrix([self.field1_symbol, self.field2_symbol])
+        display(vec, R)
         vec_rot = R * vec
         self.field1 = vec_rot[0]
-        self.field2 = vec_rot[1]
+        self.field2 = vec_rot[1]"""
         
         # Rotate the parameters
+        res = generate_parameter_relations(self, self, R)
+        self.DATA["param_equations_new_basis"] = res[0]
+        self.DATA["param_equations_old_basis"] = res[1]
+        
+        # Get the new symbols from R
+        new_symbols = {}
+        for symb in R.free_symbols:
+            new_symbols[symb.name] = symb
+            self.basis_params.append(symb)
+
+        self.update_symbols(new_symbols)
+        
+        return res
+        
+    
+    def subs(self, subs, new_VEVs, new_bgfields, basis_params) -> None:
+        """Subs from orginal to new basis"""
+        
+        #self.VEVs = [v.subs(subs) for v in self.VEVs]
+        #self.fields = [f.subs(subs) for f in self.fields]
+        #self.bgfields = [b.subs(subs) for b in self.bgfields]
+        
+        # sets
+        self.bgfields = new_bgfields
+        self.VEVs = new_VEVs
+        self.basis_params = basis_params
+        
+        #potential
         ...
+        
+        # fields
+        self.bgfield1 = self.bgfield1.subs(subs)
+        self.bgfield2 = self.bgfield2.subs(subs)
+        self.field1 = self.field1.subs(subs)
+        self.field2 = self.field2.subs(subs)
+        
+        #Potentials
+        self.V0 = self.V0.subs(subs)
+        self.VCT = self.VCT.subs(subs)
+    
+    
     
     #################### Analytical Methods ####################
     

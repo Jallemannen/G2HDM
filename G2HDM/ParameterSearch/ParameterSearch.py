@@ -23,6 +23,7 @@ from ..ModelCalculators.Model2HDMCalculator import Model2HDMCalculator
 from . parameter_constraints import *
 
 
+
 #################### General Methods ####################
 
 class ParamSearch:
@@ -37,9 +38,9 @@ class ParamSearch:
         self.name = name
         
         # Paths
-        os.makedirs(os.path.join(model.path_root, "paramerer_search"), exist_ok=True)
+        os.makedirs(os.path.join(model.path_root, "parameter_search"), exist_ok=True)
         
-        self.path = os.path.join(model.path_root, "paramerer_search", name)
+        self.path = os.path.join(model.path_root, "parameter_search", name)
         os.makedirs(self.path, exist_ok=True)
         
         self.path_data = os.path.join(self.path , "data")
@@ -49,7 +50,7 @@ class ParamSearch:
         os.makedirs(self.path_plots, exist_ok=True)
         
         self.path_plk = os.path.join(self.path , "ParamSearch_data", "ps.pkl")
-        os.makedirs(self.path_plk, exist_ok=True)
+        os.makedirs(os.path.join(self.path , "ParamSearch_data"), exist_ok=True)
         
         # Default subs
         if subs_VEV_values == None:
@@ -215,6 +216,16 @@ class ParamSearch:
             new_dataframe = constraint_oblique(self, new_dataframe)
             new_ps.applied_constraints["oblique"] = True
             
+        # modify paths for new ps
+        new_ps.path = os.path.join(self.model.path_root, "parameter_search", new_name)
+        os.makedirs(self.path, exist_ok=True)
+        new_ps.path_data = os.path.join(new_ps.path, "data")
+        os.makedirs(new_ps.path_data, exist_ok=True)
+        new_ps.path_plots = os.path.join(new_ps.path, "figures")
+        os.makedirs(new_ps.path_plots, exist_ok=True)
+        os.makedirs(os.path.join(new_ps.path, "ParamSearch_data"), exist_ok=True)
+        new_ps.path_plk = os.path.join(new_ps.path, "ParamSearch_data", "ps.pkl")
+        
         save_data(new_dataframe, filename=new_name, path=new_ps.path_data, merge=False, show_size=True)
             
         return new_ps
@@ -309,8 +320,252 @@ class ParamSearch:
         
     
     #################### Plotting ####################
-    
+
+    # WIP
+    def plot_hexbin_two_params(self, param1_index: int, param2_index: int, bins=30, filename: str = None, 
+                            compare_ps_list=[], compare_ps_list_colors=["grey"], single_color=None, **kwargs):
+        from matplotlib.colors import ListedColormap
         
+        if filename is None:
+            filename = self.name
+
+        dataframe = load_data(filename, path=self.path_data, as_dict=False)
+        param1 = dataframe.keys()[param1_index]
+        param2 = dataframe.keys()[param2_index]
+
+        fig, ax = plt.subplots()
+
+        # Apply user-defined tick settings
+        if "set_xticks" in kwargs:
+            ax.set_xticks(kwargs["set_xticks"])
+        if "set_yticks" in kwargs:
+            ax.set_yticks(kwargs["set_yticks"])
+
+        # Compute axis limits to ensure alignment
+        y_min, y_max = ax.get_ylim()
+        x_min, x_max = ax.get_xlim()
+        extent = [x_min, x_max, y_min, y_max]
+
+        # Plot background dataset(s) with a **masked single color**
+        for i, compare_ps in enumerate(compare_ps_list):
+            compare_dataframe = load_data(compare_ps.name, path=compare_ps.path_data, as_dict=False)
+
+            # Create a masked colormap with one uniform color
+            solid_color = compare_ps_list_colors[i]
+            cmap_bg = plt.get_cmap(solid_color)
+            new_colors_bg = cmap_bg(np.ones(cmap_bg.N))  # Force single color
+            new_colors_bg[0] = [1, 1, 1, 0]  # Make zero-count tiles white/transparent
+            masked_cmap_bg = ListedColormap(new_colors_bg)
+
+            # Generate hexbin plot for the background (lower alpha for visibility)
+            ax.hexbin(compare_dataframe[param1], compare_dataframe[param2], gridsize=bins, 
+                    cmap=masked_cmap_bg, edgecolors='none', alpha=0.5, extent=extent)
+
+        # Plot main dataset
+        if single_color:
+            # Use a single solid color with masked zero counts
+            cmap_main = plt.get_cmap(single_color)
+            new_colors_main = cmap_main(np.ones(cmap_main.N))  # Force single color
+            new_colors_main[0] = [1, 1, 1, 0]  # Make zero-count tiles white/transparent
+            masked_cmap_main = ListedColormap(new_colors_main)
+            hb = ax.hexbin(dataframe[param1], dataframe[param2], gridsize=bins, cmap=masked_cmap_main, 
+                        edgecolors='none', alpha=0.8, extent=extent)  # Increase alpha to stand out
+        else:
+            # Use `viridis` gradient colormap
+            hb = ax.hexbin(dataframe[param1], dataframe[param2], gridsize=bins, cmap='viridis', 
+                        edgecolors='none', extent=extent)
+
+        # Extract hexagon bin counts for normalization
+        counts = hb.get_array()
+        max_count = counts.max()
+
+        # Modify colormap to make zero-count tiles white
+        cmap = plt.get_cmap('viridis')
+        new_colors = cmap(np.linspace(0, 1, cmap.N))
+        new_colors[0] = [1, 1, 1, 0]  # Set the lowest value to fully transparent (RGBA)
+        new_cmap = ListedColormap(new_colors)
+
+        # Replot with the adjusted colormap
+        ax.clear()
+
+        # Re-add background hexbin with **masked colormap**
+        for i, compare_ps in enumerate(compare_ps_list):
+            compare_dataframe = load_data(compare_ps.name, path=compare_ps.path_data, as_dict=False)
+            ax.hexbin(compare_dataframe[param1], compare_dataframe[param2], gridsize=bins, 
+                    cmap=masked_cmap_bg, edgecolors='none', alpha=0.5, extent=extent)
+
+        # Re-add the main dataset
+        if single_color:
+            hb = ax.hexbin(dataframe[param1], dataframe[param2], gridsize=bins, cmap=masked_cmap_main, 
+                        edgecolors='none', alpha=1.0, extent=extent)  # Keep it visible
+        else:
+            hb = ax.hexbin(dataframe[param1], dataframe[param2], gridsize=bins, cmap=new_cmap, 
+                        edgecolors='none', extent=extent)
+
+        # Add colorbar **only if using `viridis`**
+        if not single_color:
+            cbar = plt.colorbar(hb, label='Normalized Count')
+            cbar.set_ticks([0, 0.5 * max_count, max_count])
+            cbar.set_ticklabels(["0", "50%", "100%"])
+
+        # Apply user-defined tick labels
+        if "set_xticklabels" in kwargs:
+            plt.xticks(kwargs["set_xticklabels"])
+        if "set_yticklabels" in kwargs:
+            plt.yticks(kwargs["set_yticklabels"])
+
+        # Ensure hexagons are not distorted
+        ax.set_aspect('equal')
+
+        # Labels and title
+        plt.xlabel(f"${param1}$")
+        plt.ylabel(f"${param2}$")
+        plt.title(f"${param1}$ vs ${param2}$")
+
+        # Save and display
+        plt.savefig(os.path.join(self.path_plots, f"histogram_{param1}_vs_{param2}.png"))
+        plt.show()
+
+        
+    def plot_bin2D_two_params(self, param1_index: int, param2_index: int, bins=30, filename: str = None, 
+                            compare_ps_list=[], compare_ps_list_colors=["grey"], single_color=False, **kwargs):
+        from matplotlib.colors import ListedColormap
+        
+        #from matplotlib.colors import ListedColormap
+
+        # Determine file name and load main dataset
+        if filename is None:
+            filename = self.name
+        dataframe = load_data(filename, path=self.path_data, as_dict=False)
+        # Assume dataframe.keys() returns a list-like object
+        params = list(dataframe.keys())
+        param1 = params[param1_index]
+        param2 = params[param2_index]
+        
+        # Extract main data values
+        x = dataframe[param1]
+        y = dataframe[param2]
+
+        # Create figure and axis (using object-oriented API)
+        fig, ax = plt.subplots()
+
+        # Apply user-defined tick settings if provided
+        if "set_xticks" in kwargs:
+            ax.set_xticks(kwargs["set_xticks"])
+        if "set_yticks" in kwargs:
+            ax.set_yticks(kwargs["set_yticks"])
+            
+        y_min, y_max = ax.get_ylim()
+        x_min, x_max = ax.get_xlim()
+        extent = [x_min, x_max, y_min, y_max]
+        
+        # Define common bin edges using main dataset's min and max
+        if isinstance(bins, int):
+            #xedges = np.linspace(np.min(x), np.max(x), bins + 1)
+            #yedges = np.linspace(np.min(y), np.max(y), bins + 1)
+            xedges = np.linspace(x_min, x_max, bins + 1)
+            yedges = np.linspace(y_min, y_max, bins + 1)
+        else:
+            # If bins is already a pair of arrays (or similar), unpack accordingly
+            xedges, yedges = bins
+
+        # Plot background dataset(s) with a masked single color, using common bin edges
+        for i, compare_ps in enumerate(compare_ps_list):
+            compare_dataframe = load_data(compare_ps.name, path=compare_ps.path_data, as_dict=False)
+            # Use same parameter names as main data to ensure alignment
+            x_bg = compare_dataframe[param1]
+            y_bg = compare_dataframe[param2]
+            
+            # Compute 2D histogram using common bin edges
+            counts_bg, _, _ = np.histogram2d(x_bg, y_bg, bins=[xedges, yedges])
+            # Mask zero counts
+            counts_bg = np.ma.masked_where(counts_bg == 0, counts_bg)
+            
+            # Create a colormap from the provided color string if needed
+            color = compare_ps_list_colors[i] if i < len(compare_ps_list_colors) else "grey"
+            cmap_bg = ListedColormap([color])
+            
+            img = ax.imshow(counts_bg.T, extent=extent, origin='lower', cmap=cmap_bg, alpha=1.0, aspect='auto')
+
+        # Compute histogram for the main dataset using the same bin edges
+        counts, _, _ = np.histogram2d(x, y, bins=[xedges, yedges])
+        counts = np.ma.masked_where(counts == 0, counts)
+
+        if single_color:
+            # For a single solid color, create a ListedColormap
+            if "color" in kwargs:
+                color = kwargs["color"]
+            else:
+                color = "blue"
+            cmap_main = ListedColormap([color])
+        else:
+            cmap_main = "viridis"
+            
+        img = ax.imshow(counts.T, extent=extent, origin='lower', cmap=cmap_main, aspect='auto')
+        
+        # Add a colorbar only when using viridis
+        if not single_color:
+            cbar = plt.colorbar(img, ax=ax, label='Normalized Count')
+            cbar.set_ticks([0, 0.5 * counts.max(), counts.max()])
+            cbar.set_ticklabels(["0", "0.5", "1"])
+
+        # Apply user-defined tick labels if provided
+        if "set_xticklabels" in kwargs:
+            ax.set_xticklabels(kwargs["set_xticklabels"])
+        if "set_yticklabels" in kwargs:
+            ax.set_yticklabels(kwargs["set_yticklabels"])
+
+        # Labels and title
+        ax.set_xlabel(f"${param1}$")
+        ax.set_ylabel(f"${param2}$")
+        ax.set_title(f"${param1}$ vs ${param2}$")
+        ax.set_aspect('equal')
+
+        # Ensure that the directory exists before saving
+        if not os.path.exists(self.path_plots):
+            os.makedirs(self.path_plots)
+        save_path = os.path.join(self.path_plots, f"histogram2D_{param1}_vs_{param2}.png")
+        plt.savefig(save_path)
+        plt.show()
+        
+        
+            
+    def plot_scatter_two_params(self, param1_index:int, param2_index:int, filename:str=None, **kwargs):
+        plt.figure()
+        if filename == None:
+            filename = self.name
+            
+        dataframe = load_data(filename, path=self.path_data, as_dict=False)
+        param1 = dataframe.keys()[param1_index]
+        param2 = dataframe.keys()[param2_index]
+        plt.scatter(dataframe[param1], dataframe[param2], marker=".")
+        plt.xlabel(f"${param1}$")
+        plt.ylabel(f"${param2}$")
+        plt.title(f"${param1}$ vs ${param2}$")
+        plt.savefig(os.path.join(self.path_plots, f"scatter_{param1}_vs_{param2}.png"))
+        plt.show()
+        
+    def plot_params_effective(self, bins=30, filename:str=None):
+        plt.figure()
+        if filename == None:
+            filename = self.name
+            
+        dataframe = load_data(filename, path=self.path_data, as_dict=False)
+        params = dataframe.keys()[0:14]
+        params_CT = dataframe.keys()[14:28]
+        
+        for i in range(14):
+            plt.hist(dataframe[params[i]], bins=bins, alpha=0.5, label=params[i])
+            plt.hist(dataframe[params_CT[i]], bins=bins, alpha=0.5, label=params_CT[i])
+            plt.hist(dataframe[params[i]], bins=bins, alpha=0.5, label=params[i])
+
+        plt.legend()
+        plt.xlabel("Parameter values")
+        plt.ylabel("Frequency")
+        plt.title("Parameter values")
+        plt.savefig(os.path.join(self.path_plots, f"histogram_params.png"))
+        plt.show()
+    
 
 #################### Iterators ####################
 

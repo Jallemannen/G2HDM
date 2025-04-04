@@ -75,6 +75,8 @@ ANALYSIS
 SUGGESTIONS
 ====================================
 
-* Use a general potential gievn by tensor components, 
-eg Li, Lij, Lijk, Lijkl for couplings
+* Use a general potential given by tensor components, 
+eg Li, Lij, Lijk, Lijkl for couplings (these can also be rotated, as a tensor).
+Similarly can be done for the CT potential.  
+
 * Solve higgs basis --> expand to gen basis for basis-dep solutions

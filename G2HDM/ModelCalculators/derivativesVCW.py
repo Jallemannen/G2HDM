@@ -28,6 +28,25 @@ class CWPotentialDerivativeCalculator:
         self.masses_gauge, self.R_gauge = MDC.calculate_masses_gauge(subs_bgfield_values)
         #self.masses_fermions, self.R_fermions = MDC.calculate_masses_fermions(subs_bgfield_values)
 
+        ####################################
+        # TEST!!!
+        #self.masses_higgs = [mass for i, mass in enumerate(self.masses_higgs) if i in [1,2,3,6,7]]
+        """
+        new_masses_higgs = []
+        for i, mass in enumerate(self.masses_higgs):
+            if i in [0,4,5,6,7] : #[0,4,5]: #[1,2,3,6,7] # [0,4,5,6,7] works
+                new_masses_higgs.append(mass)
+            else:
+                new_masses_higgs.append(0)
+        self.masses_higgs = new_masses_higgs
+        """
+        #self.masses_higgs[0] = self.masses_higgs[0] * 0.5 #2/3
+        #self.masses_higgs[1] = self.masses_higgs[1] * 0.5 #2/3
+        #self.masses_higgs[2] = self.masses_higgs[2] * 0.5 #2/3
+        #self.masses_higgs[3] = self.masses_higgs[3] * 0.5 #2/3
+        #self.masses_higgs = [mass*0.7 for mass in self.masses_higgs]
+        ####################################
+
         # Add a regulator to the masses
         #display(self.masses_higgs)
         self.regulator = regulator
@@ -41,6 +60,31 @@ class CWPotentialDerivativeCalculator:
         self.massStates_gauge = self.R_gauge @ model.massfields_gauge
         #self.massStates_fermions = sp.Matrix(self.R_fermions) * sp.Matrix(model.massfields_fermions)
 
+        #print("Mass states:")
+        #display(sp.Matrix(self.massStates_higgs))
+        
+        # Remove small coefficients
+        def remove_small_coefficients(vec):
+            updated_vec = []
+            for term in vec:
+                # Extract the terms
+                coefficient = term.as_coefficients_dict()
+
+                # Replace small coefficients with zero
+                new_element = 0
+                for symb,coeff in coefficient.items():
+                    if sp.Abs(coeff) > 1e-10:
+                        new_element += coeff*symb
+
+                updated_vec.append(new_element)
+            return np.array(updated_vec)
+        
+        #self.massStates_higgs = remove_small_coefficients(self.massStates_higgs)
+        
+        #print("Mass states:")
+        ##display(sp.Matrix(remove_small_coefficients(self.massStates_higgs)))
+        #display(sp.Matrix(remove_small_coefficients(self.R_higgs.T @ model.massfields)).subs({sp.Symbol(f"h_{i}",real=True):sp.Symbol(f"\phi_{i}",real=True) for i in range(8)}))
+        
         # Potentials (This is a time sink)
         subs_massStates_higgs = {field:state for field,state in zip(model.fields, self.massStates_higgs)}
         subs_massStates_gauge = {field:state for field,state in zip(model.fields_gauge, self.massStates_gauge)}
@@ -93,7 +137,8 @@ class CWPotentialDerivativeCalculator:
         NCW_gauge = self.Ni(L3=self.L3_gauge, masses=self.masses_gauge, kT=3/2, coeff=3/2)
         NCW_fermions = np.zeros(8) #Ni(L3, masses, kT, coeff)
         NCW = NCW_higgs + NCW_gauge + NCW_fermions
-        NCW = self.epsilon * self.R_higgs @ NCW # numpy matrix mul (j to i)  #sp.Matrix(NCW)
+        NCW =  self.epsilon * self.R_higgs @ NCW # numpy matrix mul (j to i)  #sp.Matrix(NCW)
+        #NCW = self.epsilon * NCW
         NCW = np.where(np.abs(NCW) < self.threshold, 0, NCW)
         return NCW #sp.Matrix(NCW) 
     
@@ -104,6 +149,7 @@ class CWPotentialDerivativeCalculator:
         MCW = MCW_higgs + MCW_gauge + MCW_fermions
         #display(sp.Matrix(MCW_higgs), sp.Matrix(MCW_gauge))
         MCW = self.epsilon * self.R_higgs @ (MCW+MCW.T)/2 @ self.R_higgs.T
+        #MCW = self.epsilon * (MCW+MCW.T)/2 
         MCW = np.where(np.abs(MCW) < self.threshold, 0, MCW)
         
 
@@ -117,6 +163,7 @@ class CWPotentialDerivativeCalculator:
         if msq < 0:
             msq = -msq
             sign = -1
+            return 0 #TEST
             
         if msq==0: #.is_zero:
             result = 0
@@ -136,9 +183,11 @@ class CWPotentialDerivativeCalculator:
         if m1sq < 0:
             m1sq = -m1sq
             sign1 = -1
+            return 0 #TEST
         if m2sq < 0:
             m2sq = -m2sq
             sign2 = -1
+            return 0 #TEST
         
         # Apply IR regulator to all masses
         m1sq_R = m1sq + self.regulator
@@ -299,7 +348,7 @@ class CWPotentialDerivativeCalculator:
         """
         masses = np.array(masses)
         n = len(masses)
-        N = 8
+        #N = 8
         
         # -----------------------------
         # First term: use np.einsum for double sum over a and b.
